@@ -133,6 +133,7 @@ const post = new THREE.ShaderMaterial({
     uPunch: { value: 1 },                       // contrast + saturation together (1 = as drawn)
     uSkyDim: { value: 0 },                      // darkens the sky only, never the world's light
     uDream: { value: 0 },                       // dream glass: blur + glow, a fogged window
+    uCloudVis: { value: 1 },                    // the Clouds switch (also the clouds outside the cabin windows)
     // Scrim panel: tuned for projecting through layered fabric
     tDepth: { value: rt.depthTexture },
     uBloom: { value: 0 },                       // glow bleeding off the bright parts, soft-capped
@@ -161,7 +162,7 @@ const post = new THREE.ShaderMaterial({
     uniform float uPx;
     uniform vec3 uTop, uMid, uBot;
     uniform float uTime, uLoop, uGrain, uFrame, uHalftone;
-    uniform float uRipple, uPunch, uSkyDim, uDream;
+    uniform float uRipple, uPunch, uSkyDim, uDream, uCloudVis;
     uniform sampler2D tDepth;
     uniform float uBloom, uSat, uLift, uEdge, uFade, uSubject;
     uniform float uTz, uGlowR, uAir, uBlack, uNightA, uNightB, uSplit, uLeftA, uSunRA;
@@ -279,12 +280,35 @@ const post = new THREE.ShaderMaterial({
       return col;
     }
 
-    // a soft cloud puff (three overlapping blobs) for the airplane windows
-    float puff(vec2 p, float r) {
-      float a = exp(-dot(p, p) / (r * r));
-      a = max(a, exp(-dot(p - vec2(0.9 * r, 0.25 * r), p - vec2(0.9 * r, 0.25 * r)) / (r * r * 0.6)));
-      a = max(a, exp(-dot(p + vec2(0.85 * r, -0.15 * r), p + vec2(0.85 * r, -0.15 * r)) / (r * r * 0.5)));
-      return smoothstep(0.35, 0.75, a);
+    // smooth value noise, for wispy cloud edges
+    float vnoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+    }
+    // A cloud seen from the plane, in the same clean graphic style as the
+    // sky clouds: a row of round scallops (a big crown, smaller ones toward
+    // the ends) over a filled core, crisp edges, a flat base.
+    // p is relative to the cloud's centre, r its size, sd its own seed.
+    float puff(vec2 p, float r, float sd) {
+      vec2 q = p / r;                                          // about -1.6..1.6 wide
+      float crown = (hash(vec2(sd, 9.0)) - 0.5) * 0.9;
+      float d = 1e5;                                           // signed distance (cloud units)
+      float topY = -1e5, x0 = 0.0, x1 = 0.0;
+      for (int k = 0; k < 5; k++) {
+        float fk = float(k);
+        float x = -1.25 + 2.5 * fk / 4.0 + (hash(vec2(sd, fk)) - 0.5) * 0.1;
+        float near = 1.0 - min(1.0, abs(x - crown) / 1.4);
+        float rr = max(0.4, 0.3 + 0.55 * pow(near, 1.3) + 0.12 * hash(vec2(fk, sd + 3.0)));
+        float cy = rr * (0.5 + 0.25 * hash(vec2(fk, sd + 5.0)));
+        d = min(d, length(q - vec2(x, cy)) - rr);
+        topY = max(topY, cy);
+        if (k == 0) x0 = x;
+        if (k == 4) x1 = x;
+      }
+      d = min(d, max(max(x0 - q.x, q.x - x1), max(-q.y, q.y - 0.4)));   // the core
+      d = max(d, -q.y);                                        // the flat base at q.y = 0
+      return 1.0 - smoothstep(-0.03, 0.03, d);
     }
 
     // looking out of an airliner: three rounded windows in the cabin wall,
@@ -318,9 +342,9 @@ const post = new THREE.ShaderMaterial({
         float x = fract(hash(vec2(fi, 2.0)) - ph * speed) * 2.6 - 1.3;
         float y = (hash(vec2(fi, 3.0)) - 0.5) * 0.5 * s;
         float r = (0.05 + 0.06 * hash(vec2(fi, 4.0))) * s;
-        cl = max(cl, puff(c - vec2(x * s, y), r) * (0.55 + 0.4 * hash(vec2(fi, 5.0))));
+        cl = max(cl, puff(c - vec2(x * s, y), r, fi + 1.0) * (0.55 + 0.4 * hash(vec2(fi, 5.0))));
       }
-      g = mix(g, vec3(0.97, 0.97, 1.0), cl * 0.9);
+      g = mix(g, vec3(0.97, 0.97, 1.0), cl * 0.9 * uCloudVis);
       g += vec3(0.1) * exp(-pow((lc.x * 0.9 + lc.y * 0.5 - 0.04 * s) / (0.025 * s), 2.0));
       g *= 1.0 - 0.3 * smoothstep(-0.04 * s, 0.0, sd);
       return g;
@@ -579,6 +603,8 @@ let blackStart = -1;   // when the fade from black began (song 1)
 let lastCue = target.cameraCue;
 let easeBoostUntil = 0;
 let strokeMode = null;
+if (!params.has('cloudsOn')) target.cloudsOn = false;   // clouds start off (the controller can switch them on)
+cloudsVis = target.cloudsOn ? 1 : 0;           // start as the switch says (no fade on load)
 let halftoneAmt = target.halftoneOn ? 1 : 0;   // eased: the halftone dots fade in / out
 let breath = target.breatheOn ? 1 : 0;   // eased slowly, so breathing starts and stops gently
 let ripple = target.rippleOn ? 1 : 0;     // the ripple switch fades over ~3 s
@@ -1038,6 +1064,7 @@ function drawFrame(now) {
   post.uniforms.uPunch.value = cur.contrast;
   post.uniforms.uSkyDim.value = cur.skyDim;
   post.uniforms.uDream.value = cur.dream;
+  post.uniforms.uCloudVis.value = cloudsVis;
   post.uniforms.uBloom.value = cur.bloom;
   post.uniforms.uSat.value = cur.saturation;
   post.uniforms.uLift.value = cur.shadowLift;

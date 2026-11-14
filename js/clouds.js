@@ -30,52 +30,52 @@ function valueNoise(seed) {
   };
 }
 
-// A cloud's shape: many soft blobs of different sizes that MELT together
-// (they're summed, like metaballs, not stacked), so the outline is one
-// flowing curve with no circles or creases showing. The whole field is
-// gently warped by slow noise, so the edge drifts organically, and the
-// bottom is flattened the way real cumulus sit on a level base.
+// A cloud's shape, in a clean graphic style: a row of round scallops of
+// varied sizes — a big crown, smaller ones stepping down toward the ends —
+// over a filled core, with crisp edges. Most have a flat base; some have a
+// scalloped underside. Neighbouring scallops always overlap, so nothing
+// floats apart, and the crown never leaves the frame.
 function cloudField(seed, W = 256, H = 128) {
-  const n = valueNoise(seed);
-  const n2 = valueNoise(seed * 3 + 11);
   const r = mulberry32(seed * 7 + 1);
-  const ox = r() * 50, oy = r() * 50;
-  const blobs = [];
-  // a long, low body
-  for (let i = 0; i < 4; i++) {
-    blobs.push({ x: 0.2 + 0.6 * (i + r() * 0.6) / 4, y: 0.6 + r() * 0.05, rx: 0.16 + r() * 0.08, ry: 0.12 + r() * 0.04, w: 0.8 + r() * 0.3 });
+  const ASP = 2.1;                                // v units per u unit for a true circle on the plane
+  const flat = r() < 0.65;
+  const n = 4 + Math.floor(r() * 4);              // scallops across the top
+  const x0 = 0.14 + r() * 0.04, x1 = 0.86 - r() * 0.04;
+  const crown = 0.35 + r() * 0.3;                 // where the biggest scallop sits (0..1 across)
+  const baseV = 0.76;
+  const circ = [];
+  const sp = (x1 - x0) / (n - 1);
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const near = 1 - Math.min(1, Math.abs(t - crown) / 0.55);
+    const lift = flat ? 0.5 + r() * 0.25 : 0.75 + r() * 0.2;
+    const x = x0 + (x1 - x0) * t + (r() - 0.5) * 0.02;
+    let rad = Math.max(0.62 * sp, 0.055 + 0.11 * Math.pow(near, 1.3) + r() * 0.025);
+    rad = Math.min(rad, (baseV - 0.05) / (ASP * (1 + lift)), x - 0.02, 0.98 - x);
+    circ.push({ x, y: baseV - rad * ASP * lift, rad });
   }
-  // billows rising off the top, biggest near the middle
-  const tops = 3 + Math.floor(r() * 3);
-  for (let i = 0; i < tops; i++) {
-    const x = 0.24 + 0.52 * (i + 0.2 + r() * 0.6) / tops;
-    const mid = 1 - Math.abs(x - 0.5) * 1.6;
-    blobs.push({ x, y: 0.5 - 0.12 * mid - r() * 0.05, rx: 0.08 + 0.08 * mid + r() * 0.04, ry: 0.09 + 0.07 * mid + r() * 0.03, w: 0.75 + r() * 0.35 });
+  const top = circ.slice();
+  if (!flat) {                                    // a scalloped underside: a lower row of bumps
+    const m = Math.max(2, n - 1);
+    const sp2 = (x1 - x0 - 0.1) / Math.max(1, m - 1);
+    for (let i = 0; i < m; i++) {
+      const t = i / (m - 1);
+      const rad = Math.min(0.11, Math.max(0.6 * sp2, 0.06 + r() * 0.03));
+      circ.push({ x: x0 + 0.05 + (x1 - x0 - 0.1) * t, y: baseV - rad * ASP * 0.75, rad });
+    }
   }
-  // a couple of small wisps trailing off the ends
-  for (const sx of [-1, 1]) {
-    blobs.push({ x: 0.5 + sx * (0.36 + r() * 0.06), y: 0.6 + r() * 0.04, rx: 0.07 + r() * 0.04, ry: 0.05 + r() * 0.02, w: 0.5 + r() * 0.3 });
-  }
+  const coreTop = Math.max(...top.map(c => c.y));
+  const coreBot = flat ? baseV : Math.min(...circ.slice(n).map(c => c.y));
+  const EDGE = 0.006;                             // crisp edge (in u)
   const data = new Uint8Array(W * H * 4);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      let u = x / W, v = y / H;                 // v = 0 is the top of the texture
-      // slow warp: the outline drifts in and out in long, soft waves
-      u += (n2(ox + u * 3.0, oy + v * 2.0) - 0.5) * 0.06;
-      v += (n2(oy + u * 2.5 + 7.3, ox + v * 3.0) - 0.5) * 0.06;
-      // sum of gaussian blobs: they merge smoothly where they overlap
-      let d = 0;
-      for (const b of blobs) {
-        const bx = (u - b.x) / b.rx, by = (v - b.y) / b.ry;
-        d += b.w * Math.exp(-(bx * bx + by * by));
-      }
-      // a level base: the bottom fades a little faster than the top
-      const base = 1 - Math.min(1, Math.max(0, (v - 0.68) / 0.12));
-      let shape = (1 - Math.exp(-d * 1.6)) * (0.35 + 0.65 * base * base * (3 - 2 * base));
-      // soft texture inside, from low octaves only, so the edge stays smooth
-      let f = 0, amp = 0.5, fr = 2.2;
-      for (let o = 0; o < 4; o++) { f += amp * n(ox + u * fr * 2, oy + v * fr); amp *= 0.5; fr *= 2.0; }
-      const val = Math.max(0, Math.min(1, shape * (0.78 + (f - 0.5) * 0.35)));
+      const u = x / W, v = y / H;                 // v = 0 is the top of the texture
+      let d = 1e9;                                // signed distance to the union of circles
+      for (const c of circ) d = Math.min(d, Math.hypot(u - c.x, (v - c.y) / ASP) - c.rad);
+      d = Math.min(d, Math.max(top[0].x - u, u - top[n - 1].x, (coreTop - v) / ASP, (v - coreBot) / ASP));
+      if (flat) d = Math.max(d, (v - baseV) / ASP);   // the flat cut along the base
+      const val = Math.max(0, Math.min(1, 0.5 - d / (2 * EDGE)));
       const i = ((H - 1 - y) * W + x) * 4;   // row 0 of a DataTexture is the bottom
       data[i] = data[i + 1] = data[i + 2] = Math.round(val * 255);
       data[i + 3] = 255;

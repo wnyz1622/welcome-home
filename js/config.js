@@ -157,7 +157,7 @@ export const DEFAULT_STATE = Object.freeze({
   edgeDark: 0.3,         // darkens toward the frame's edges
   distFade: 0.25,        // fades distant things into the sky; the subject stays vivid
   rainOn: true,          // weather switches
-  cloudsOn: true,        // the clouds (fade out over ~2 s when switched off)
+  cloudsOn: false,       // the clouds: off by default (fade in / out over ~2 s when switched)
   snowOn: true,              // 0 = blended sky, 1 = sky split down the middle, day | night
   windowLight: 0.7,
   clouds: 0.75,          // how many clouds

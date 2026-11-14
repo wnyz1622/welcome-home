@@ -572,8 +572,6 @@ listed in the order they were requested, newest at the bottom.
   shadows**, **Darken edges**, and **Fade distance** (things far behind the
   subject melt into the sky, using real depth).
 - **Clouds switch** under Weather; the clouds fade out and back over ~2 s.
-- **Cloud shapes** are one smooth organic curve (soft blobs that melt
-  together, gently warped) instead of three circles stuck together.
 - **Auto time:** a switch under Time; the clock keeps running from the set
   time at one hour every 10 minutes, with the light changing as it goes.
   Minutes show in the readouts. Always starts off.
@@ -599,4 +597,18 @@ listed in the order they were requested, newest at the bottom.
   framed windows, door knobs and canopies, and sometimes a chimney or a
   round gable window. Every house keeps its place and colors.
 - **Controller, narrow window:** sliders sit two to a row.
+
+## Round 25: graphic clouds, off by default (2026-11-14)
+
+- **New cloud style**, after a reference sheet of flat graphic clouds: a
+  row of round scallops of varied sizes (a big crown, smaller ones stepping
+  down to the ends) over a filled core, with crisp clean edges. Most have a
+  flat base, some a scalloped underside; each cloud is its own shape.
+  Replaces both the old soft blobs in the sky and the three-circle clouds
+  outside the cabin windows (song 1).
+- **The Clouds switch now covers the cabin-window clouds** too (song 1),
+  and the viewer opens in the switch's state instead of fading on load.
+- **Clouds are off by default** everywhere; the controller and viewer
+  switch them off each time they open. The Clouds switch under Weather
+  brings them back.
 

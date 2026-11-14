@@ -18,6 +18,7 @@ const hhmm = (h) => {
 
 let state = loadState();
 state.autoTime = false;   // auto time always starts off; switch it on during the show
+state.cloudsOn = false;   // clouds always start off too; switch them on if a song wants them
 let selectedSong = state.activeSong >= 0 ? state.activeSong : 0;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel(CHANNEL_NAME) : null;
 

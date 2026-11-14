@@ -1,4 +1,4 @@
-SONG VIEWS — current setup (from views.json + js/songs.js, updated 2026-11-14, round 24)
+SONG VIEWS — current setup (from views.json + js/songs.js, updated 2026-11-14, round 25)
 
 camera:  static = fixed spot, the world moves in front of it
          follow = rides along with a moving subject
@@ -9,7 +9,8 @@ Controls (Motion card): zoom, camera angle, orbit, Auto orbit (non-stop:
 one extra turn a minute, saved with the song) and Pan Left / Center /
 Right (glides a tenth of the screen per press, kept when you Save view).
 Auto time (under Time): the clock keeps running from the set time, one
-hour every 10 min; always starts off. Clouds switch under Weather.
+hour every 10 min; always starts off. Clouds switch under Weather
+(off by default; graphic scalloped clouds when on).
 Scrim panel (show-wide, not per song): Halftone dots (off), Bloom 30%,
 Saturation 110%, Lift shadows 15%, Darken edges 30%, Fade distance 25%.
 
