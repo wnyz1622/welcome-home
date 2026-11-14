@@ -1,12 +1,11 @@
 // Controller: edits the shared state and broadcasts it to any open viewer.
 
 import {
-  CHANNEL_NAME, LOOP_SECONDS, DEFAULT_STATE, ATMOSPHERES, VIEWS_KEY,
+  CHANNEL_NAME, LOOP_SECONDS, DEFAULT_STATE, ATMOSPHERES,
   loadState, saveState, sanitize,
 } from './config.js';
-import { CAMERA_PRESETS, presetById } from './presets.js';
+import { GROUPS, presetById, isView } from './presets.js';
 import { SONG_SCENES } from './songs.js';
-import { relaySender, newRoomCode } from './relay.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -18,25 +17,14 @@ const channel = 'BroadcastChannel' in window ? new BroadcastChannel(CHANNEL_NAME
 
 // ------------------------------------------------------------- formatting
 
-const pct = v => `${Math.round(v * 100)}%`;
 const fmt = {
-  rotationSpeed: v => `${v >= 0 ? '' : '−'}${Math.abs(v).toFixed(2)} turns`,
-  floatIntensity: v => `${v.toFixed(2)} · ${v < 1.05 ? 'floating' : v < 2.2 ? 'separating' : v < 3.6 ? 'disassembling' : 'scattered'}`,
   birdSpeed: v => `${v.toFixed(2)}×`,
-  zoom: v => `${v.toFixed(2)}×`,
+  contrast: v => v === 1 ? 'as drawn' : `${v > 1 ? '+' : '−'}${Math.round(Math.abs(v - 1) * 100)}%`,
+  skyDim: v => v === 0 ? 'off' : `−${Math.round(v * 100)}%`,  zoom: v => `${v.toFixed(2)}×`,
   cameraAngle: v => `${v.toFixed(1)}°`,
   cameraOrbit: v => `${v > 0 ? '+' : ''}${Math.round(v)}°`,
   transition: v => `${v.toFixed(1)} s`,
-  houseCount: v => String(v),
-  birdCount: v => String(v),
-  timezone: v => v < 0.05 ? 'shared time' : pct(v),
-  darkness: pct,
-  split: v => v < 0.02 ? 'blended' : v > 0.98 ? 'split' : pct(v),
   twHour: v => `${pad(Math.round(v) % 24)}:00 Taiwan · ${pad((Math.round(v) + 12) % 24)}:00 New York`,
-  windowLight: pct, clouds: v => `${Math.round(v * 16)} / 16`,
-  cloudDensity: pct, cloudOpacity: pct, cloudSoftness: pct,
-  cloudDrift: v => `${v.toFixed(2)}×`,
-  halftone: pct, grain: v => v.toFixed(2),
 };
 
 // ------------------------------------------------------------- broadcast
@@ -50,7 +38,6 @@ function push(ease = false) {
   requestAnimationFrame(() => {
     pending = false;
     channel?.postMessage({ type: 'state', state, ease: pendingEase });
-    relay?.send('state', { state, ease: pendingEase }, true);
     pendingEase = false;
   });
 }
@@ -69,48 +56,117 @@ function applyEffects(effects = {}) {
 }
 
 // ------------------------------------------------------------- saved song views
-// Kept in this browser (localStorage), keyed by title + artist so they
-// survive reordering songs.js. "Copy saved views as code" turns them into
-// lines for songs.js to make them permanent.
+// Kept in views.json in the project folder (written by serve.py), keyed by
+// title + artist so they survive reordering songs.js. A saved view overrides
+// the song's default camera in js/songs.js. They used to live in each
+// browser's storage; those old browser copies are ignored now, so every
+// computer sees exactly what is in views.json.
 
 const songKey = (s) => `${s.title}|${s.artist}`;
 let views = {};
-try { views = JSON.parse(localStorage.getItem(VIEWS_KEY)) || {}; } catch { views = {}; }
-const saveViews = () => { try { localStorage.setItem(VIEWS_KEY, JSON.stringify(views)); } catch { /* private mode */ } };
-const viewFor = (s) => views[songKey(s)] || null;
+let canWrite = false;
+const viewFile = () => $('#viewFile');
+function setFileStatus(text, ok) {
+  const el = viewFile();
+  if (!el) return;
+  el.textContent = text;
+  el.dataset.ok = String(ok);
+}
+async function loadViews() {
+  try {
+    const r = await fetch('views.json', { cache: 'no-store' });
+    views = r.ok ? (await r.json()) || {} : {};
+  } catch { views = {}; }
+  try { canWrite = (await fetch('api/ping', { cache: 'no-store' })).ok; } catch { canWrite = false; }
+  const n = Object.keys(views).length;
+  setFileStatus(canWrite
+    ? `views.json · ${n} saved view${n === 1 ? '' : 's'}`
+    : `views.json · ${n} saved · read-only: start with python3 serve.py to save`, canWrite);
+  render();
+}
+// Re-read views.json right before changing it, so a tab opened before the
+// file changed (a new zip, another tab) never writes back an old copy.
+async function freshViews() {
+  try {
+    const r = await fetch('views.json', { cache: 'no-store' });
+    if (r.ok) views = (await r.json()) || {};
+  } catch { /* keep what we have */ }
+}
+async function saveViews() {
+  if (!canWrite) return false;
+  try {
+    const r = await fetch('api/views', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(views),
+    });
+    if (!r.ok) return false;
+    const n = Object.keys(views).length;
+    setFileStatus(`views.json · ${n} saved view${n === 1 ? '' : 's'}`, true);
+    return true;
+  } catch { return false; }
+}
+// a song can bump viewVersion in songs.js to retire views saved before the change
+const viewFor = (s) => {
+  const v = views[songKey(s)];
+  return v && (v.ver || 1) >= (s.viewVersion || 1) ? v : null;
+};
 
-function applyView(v) {
-  if (typeof v.time === 'number') state.twHour = v.time;
-  if (Array.isArray(v.sky)) [state.bgTop, state.bgMid, state.bgBottom] = v.sky;
+// The camera a song opens on. Newest first: a view saved into views.json,
+// then a view written in songs.js, then the old style (a preset plus slider
+// values), which still works for anything saved before views became their
+// own cameras.
+// Saved with each view along with the camera, hour and sky. Anything a song
+// hasn't saved keeps its value from songs.js, or from the song before.
+// (House layout and stroke style are never saved per song.)
+const SAVED_SETTINGS = ['floatIntensity', 'birdSpeed', 'breatheOn', 'rippleOn', 'rainOn', 'snowOn', 'contrast', 'skyDim'];
+
+function songCamera(s) {
+  const saved = viewFor(s);
+  if (saved && isView(saved.view)) return { view: saved.view, saved };
+  if (saved && saved.camera) return { legacy: saved, saved };
+  if (isView(s.view)) return { view: s.view, saved: null };
+  return { legacy: s, saved: null };
+}
+
+function applySavedView(v) {
+  state.customView = v;
+  state.cameraPreset = v.scene || 'view';
   state.zoom = v.zoom;
-  state.cameraAngle = v.angle;
-  state.cameraOrbit = v.orbit;
-  [state.cameraPanX, state.cameraPanY, state.cameraPanZ] = v.pan || [0, 0, 0];
+  state.cameraAngle = v.elevation;
+  state.cameraOrbit = 0;
+  state.cameraPanX = 0; state.cameraPanY = 0; state.cameraPanZ = 0;
+  applyEffects(v.effects);
+  state.cameraCue += 1;
 }
 
 function applyPreset(id) {
   const p = presetById(id);
+  state.customView = null;
   state.cameraPreset = p.id;
   state.zoom = p.zoom;
   state.cameraAngle = p.elevation;
   state.cameraOrbit = 0;
   state.cameraPanX = 0; state.cameraPanY = 0; state.cameraPanZ = 0;
-  state.tour = false;
   if (p.atmosphere) applyAtmosphere(p.atmosphere);
   applyEffects(p.effects);
   state.cameraCue += 1;
 }
 
+function applyLegacy(v) {
+  if (typeof v.zoom === 'number') state.zoom = v.zoom;
+  if (typeof v.angle === 'number') state.cameraAngle = v.angle;
+  if (typeof v.orbit === 'number') state.cameraOrbit = v.orbit;
+  if (Array.isArray(v.pan)) [state.cameraPanX, state.cameraPanY, state.cameraPanZ] = v.pan;
+}
+
 function activateScene(i) {
   i = ((i % SONG_SCENES.length) + SONG_SCENES.length) % SONG_SCENES.length;
   const s = SONG_SCENES[i];
-  const saved = viewFor(s);
-  applyPreset(saved ? saved.camera : s.camera);
+  const cam = songCamera(s);
+  if (cam.view) applySavedView(cam.view);
+  else { applyPreset(cam.legacy.camera || s.camera); applyLegacy(cam.legacy); }
   if (s.atmosphere) applyAtmosphere(s.atmosphere);
-  if (typeof s.zoom === 'number') state.zoom = s.zoom;
-  if (typeof s.angle === 'number') state.cameraAngle = s.angle;
-  if (typeof s.orbit === 'number') state.cameraOrbit = s.orbit;
-  if (Array.isArray(s.pan)) [state.cameraPanX, state.cameraPanY, state.cameraPanZ] = s.pan;
   if (typeof s.float === 'number') state.floatIntensity = s.float;
   if (s.birds) {
     if (typeof s.birds.count === 'number') state.birdCount = s.birds.count;
@@ -119,27 +175,70 @@ function activateScene(i) {
   applyEffects(s.effects);
   if (typeof s.time === 'number') state.twHour = s.time;
   if (Array.isArray(s.sky)) [state.bgTop, state.bgMid, state.bgBottom] = s.sky;
-  if (saved) applyView(saved);     // a saved view (camera + time) wins
+  if (cam.saved) {                  // a view saved into views.json: its hour, sky + settings win
+    if (typeof cam.saved.time === 'number') state.twHour = cam.saved.time;
+    if (Array.isArray(cam.saved.sky)) [state.bgTop, state.bgMid, state.bgBottom] = cam.saved.sky;
+    for (const k of SAVED_SETTINGS) {
+      const v = cam.saved.settings?.[k];
+      if (v !== undefined && typeof v === typeof DEFAULT_STATE[k]) state[k] = v;
+    }
+  }
   state.activeSong = i;
   selectedSong = i;
   render();
   push(true);
-  $(`#songList li[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  revealInList(i);
+}
+
+// Scroll only the song list (never the page) so the active song shows,
+// keeping Prev / Next where they are under your finger.
+function revealInList(i, smooth = true) {
+  const list = $('#songList');
+  const li = list?.querySelector(`li[data-i="${i}"]`);
+  if (!li) return;
+  const top = li.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
+  const bottom = top + li.offsetHeight;
+  let y = list.scrollTop;
+  if (top < y) y = top;
+  else if (bottom > y + list.clientHeight) y = bottom - list.clientHeight;
+  if (y !== list.scrollTop) list.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
+}
+
+// what to call a song's camera in the list
+const shortName = (n) => (n || '').replace(/ \(.*\)$/, '');
+function cameraLabel(cam) {
+  if (cam.view) {
+    const v = cam.view;
+    const n = v.name || (v.scene ? shortName(v.label) : v.follow ? shortName(v.label) : 'Fixed view');
+    return `${v.follow ? '↻ ' : ''}${n}`;
+  }
+  const p = presetById(cam.legacy.camera);
+  return `${p.follow ? '↻ ' : ''}${shortName(p.name)}`;
 }
 
 // ------------------------------------------------------------- build dynamic UI
 
-// camera presets
+// camera buttons, grouped by place
 const camEl = $('#cameraPresets');
-CAMERA_PRESETS.forEach((p, i) => {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'cam';
-  b.dataset.id = p.id;
-  b.innerHTML = `<span class="num">${pad(i + 1)}</span><span>${p.name}</span>`;
-  b.addEventListener('click', () => { applyPreset(p.id); render(); push(true); });
-  camEl.appendChild(b);
-});
+for (const g of GROUPS) {
+  const h = document.createElement('h4');
+  h.className = 'cam-group';
+  h.textContent = g.name;
+  camEl.appendChild(h);
+  const box = document.createElement('div');
+  box.className = 'cam-grid';
+  for (const id of g.ids) {
+    const p = presetById(id);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cam';
+    b.dataset.id = p.id;
+    b.innerHTML = `<span>${p.name.replace(/ \(.*\)$/, '')}</span>${p.follow ? '<span class="follow-mark" title="follows something that moves">↻</span>' : ''}`;
+    b.addEventListener('click', () => { applyPreset(p.id); render(); push(true); });
+    box.appendChild(b);
+  }
+  camEl.appendChild(box);
+}
 
 // song list
 const listEl = $('#songList');
@@ -148,52 +247,35 @@ SONG_SCENES.forEach((s, i) => {
   li.dataset.i = i;
   li.tabIndex = 0;
   li.innerHTML = `<span class="num">${pad(i + 1)}</span>
-    <span class="song"><strong>${s.title}</strong><span class="artist">${s.artist}</span></span>
+    <span class="song"><strong>${s.title}</strong> <span class="artist">${s.artist}</span></span>
     <span class="cam-tag"></span>`;
   li.addEventListener('click', () => { selectedSong = i; render(); });
   li.addEventListener('dblclick', () => activateScene(i));
   listEl.appendChild(li);
 });
 
-// save-view controls
-const viewSel = $('#viewSong');
-SONG_SCENES.forEach((s, i) => {
-  const o = document.createElement('option');
-  o.value = String(i);
-  o.textContent = `${pad(i + 1)} ${s.title} — ${s.artist}`;
-  viewSel.appendChild(o);
-});
-viewSel.addEventListener('change', () => { selectedSong = +viewSel.value; render(); });
+// save-view controls: they act on the song selected in the list
 const viewMsg = $('#viewMsg');
 let viewMsgTimer = 0;
 const say = (t) => { viewMsg.textContent = t; clearTimeout(viewMsgTimer); viewMsgTimer = setTimeout(() => { viewMsg.textContent = ''; }, 4000); };
 let pendingSave = null;
 $('#saveView').addEventListener('click', () => {
+  if (!canWrite) { say("Can't save: start the project with python3 serve.py (not http.server)."); return; }
   if (!channel || $('#status').dataset.live !== 'true') { say('Open the viewer first.'); return; }
-  pendingSave = +viewSel.value;
+  pendingSave = selectedSong;
   channel.postMessage({ type: 'captureView', song: pendingSave });
 });
-$('#clearView').addEventListener('click', () => {
-  const s = SONG_SCENES[+viewSel.value];
-  if (!viewFor(s)) { say('No saved view for this song.'); return; }
-  delete views[songKey(s)];
-  saveViews();
+$('#clearView').addEventListener('click', async () => {
+  const s = SONG_SCENES[selectedSong];
+  await freshViews();
   render();
-  say(`Cleared the view for ${s.title}.`);
+  if (!viewFor(s)) { say('No saved view for this song.'); return; }
+  if (!canWrite) { say("Can't change views.json: start the project with python3 serve.py."); return; }
+  const before = views[songKey(s)];
+  delete views[songKey(s)];
+  if (await saveViews()) { render(); say(`Cleared the view for ${s.title}; it's back to its default.`); }
+  else { views[songKey(s)] = before; say("Couldn't write views.json. Is serve.py still running?"); }
 });
-$('#copyViews').addEventListener('click', async () => {
-  const lines = SONG_SCENES.map((s) => {
-    const v = viewFor(s);
-    const time = (typeof v?.time === 'number' ? ` time: ${v.time},` : '')
-      + (Array.isArray(v?.sky) ? ` sky: [${v.sky.map(c => `'${c}'`).join(', ')}],` : '');
-    return v && `  // ${s.title}\n  camera: '${v.camera}', zoom: ${v.zoom}, angle: ${v.angle}, orbit: ${v.orbit}, pan: [${v.pan.join(', ')}],${time}`;
-  }).filter(Boolean);
-  if (!lines.length) { say('No saved views yet.'); return; }
-  const text = lines.join('\n');
-  try { await navigator.clipboard.writeText(text); say(`Copied ${lines.length} view${lines.length > 1 ? 's' : ''}. Paste into js/songs.js.`); }
-  catch { window.prompt('Copy these lines:', text); }
-});
-
 // atmosphere presets
 const presetsEl = $('#presets');
 ATMOSPHERES.forEach((p) => {
@@ -229,21 +311,24 @@ function render() {
     const p = ATMOSPHERES.find(x => x.id === b.dataset.id);
     b.setAttribute('aria-pressed', String(p.colors[0] === state.bgTop && p.colors[1] === state.bgMid && p.colors[2] === state.bgBottom));
   }
-  for (const b of $$('.cam')) b.setAttribute('aria-pressed', String(b.dataset.id === state.cameraPreset && !state.tour));
+  for (const b of $$('.cam')) b.setAttribute('aria-pressed', String(!state.customView && b.dataset.id === state.cameraPreset));
   for (const b of $$('#strokeButtons button')) b.setAttribute('aria-pressed', String(b.dataset.stroke === state.stroke));
+  for (const b of $$('#scatterButtons button')) b.setAttribute('aria-pressed', String(Math.abs(state.floatIntensity - parseFloat(b.dataset.float)) < 0.05));
   for (const li of $$('#songList li')) {
     const i = +li.dataset.i;
     li.classList.toggle('selected', i === selectedSong);
     li.classList.toggle('active', i === state.activeSong);
-    const v = viewFor(SONG_SCENES[i]);
-    li.querySelector('.cam-tag').innerHTML = v
-      ? `<span class="saved-mark" title="saved view">●</span>${presetById(v.camera).name}${typeof v.time === 'number' ? ` · ${pad(v.time)}:00` : ''}`
-      : presetById(SONG_SCENES[i].camera).name;
+    const cam = songCamera(SONG_SCENES[i]);
+    const hr = typeof cam.saved?.time === 'number' ? cam.saved.time : SONG_SCENES[i].time;
+    li.querySelector('.cam-tag').innerHTML = (cam.saved ? '<span class="saved-mark" title="saved in views.json">●</span>' : '')
+      + cameraLabel(cam) + (typeof hr === 'number' ? ` · ${pad(hr)}:00` : '');
   }
-  if (document.activeElement !== viewSel) viewSel.value = String(selectedSong);
+  const sel = SONG_SCENES[selectedSong];
+  $('#saveView').textContent = `Save view → ${pad(selectedSong + 1)} ${sel.title}`;
   const s = SONG_SCENES[state.activeSong];
   $('#activeSong').textContent = s ? `${pad(state.activeSong + 1)} ${s.title} — ${s.artist}` : '—';
-  $('#activeCamera').textContent = state.tour ? 'Autonomous tour' : presetById(state.cameraPreset).name;
+  $('#activeCamera').textContent = isView(state.customView)
+    ? cameraLabel({ view: state.customView }) : presetById(state.cameraPreset).name;
 }
 
 // log-scale slider position -> value
@@ -263,7 +348,6 @@ for (const el of $$('[data-key]')) {
     if (el.type === 'checkbox') state[k] = el.checked;
     else if (el.type === 'range') state[k] = INTS.has(k) ? parseInt(el.value, 10) : readSlider(el);
     else state[k] = el.value;
-    if (k === 'tour' && !state.tour) state.cameraCue += 1;
     render();
     push();
   });
@@ -294,20 +378,9 @@ $('#prevScene').addEventListener('click', () => activateScene((state.activeSong 
 $('#nextScene').addEventListener('click', () => activateScene((state.activeSong >= 0 ? state.activeSong : selectedSong - 1) + 1));
 $('#activateScene').addEventListener('click', () => activateScene(selectedSong));
 
-$('#reset').addEventListener('click', () => {
-  const cue = state.cameraCue + 1;
-  state = { ...DEFAULT_STATE, cameraCue: cue };
-  selectedSong = 0;
-  render(); push(true);
-  channel?.postMessage({ type: 'restart' });
-  resetClock();
-});
-
-$('#restart').addEventListener('click', () => { channel?.postMessage({ type: 'restart' }); resetClock(); });
 $('#openViewer').addEventListener('click', () => window.open('viewer.html', 'whnvr-viewer'));
 
 // performance keys (ignored while typing / dragging a slider)
-const PRESET_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'];
 window.addEventListener('keydown', (e) => {
   const tag = e.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -319,10 +392,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     selectedSong = Math.min(SONG_SCENES.length - 1, Math.max(0, selectedSong + (e.key === 'ArrowDown' ? 1 : -1)));
     render();
-    $(`#songList li[data-i="${selectedSong}"]`)?.scrollIntoView({ block: 'nearest' });
-  } else {
-    const idx = PRESET_KEYS.indexOf(e.key);
-    if (idx >= 0 && CAMERA_PRESETS[idx]) { applyPreset(CAMERA_PRESETS[idx].id); render(); push(true); }
+    revealInList(selectedSong, false);
   }
 });
 
@@ -341,9 +411,20 @@ try {
   }
 } catch { /* fresh clock */ }
 let clockLast = performance.now();
+// Each controller tab has an id. If another controller is open (a forgotten
+// tab, an old window), they adopt each other's clock, so the viewer is never
+// pulled between two different times (that made the islands jump).
+const CLOCK_ID = Math.random().toString(36).slice(2);
+function adoptClock(m) {
+  tickClock();
+  clock = { t: m.t, angle: m.angle, bird: m.bird, cloud: m.cloud };
+}
 function tickClock() {
   const now = performance.now();
-  const dt = Math.min(1, (now - clockLast) / 1000);
+  // the real time since the last tick, however long: when this tab is in the
+  // background the browser runs timers rarely, and capping the step here made
+  // the clock lose time (and the viewer jump to catch up)
+  const dt = Math.min(3600, Math.max(0, (now - clockLast) / 1000));
   clockLast = now;
   if (!state.autoAnimate) return;
   clock.t += dt;
@@ -354,94 +435,53 @@ function tickClock() {
 function sendClock() {
   tickClock();
   const msg = { t: clock.t, angle: clock.angle, bird: clock.bird, cloud: clock.cloud };
-  channel?.postMessage({ type: 'clock', ...msg });
-  relay?.send('clock', msg, true);
+  channel?.postMessage({ type: 'clock', src: CLOCK_ID, ...msg });
   try { localStorage.setItem(CLOCK_KEY, JSON.stringify({ ...msg, wall: Date.now() })); } catch { /* private mode */ }
 }
-function resetClock() { clock = { t: 0, angle: 0, bird: 0, cloud: 0 }; clockLast = performance.now(); sendClock(); }
 setInterval(tickClock, 100);
 setInterval(sendClock, 2000);
-
-// ------------------------------------------------------------- share live (relay)
-
-const ROOM_KEY = 'whnvr-liminal-landing/room';
-const ONLINE_KEY = 'whnvr-liminal-landing/online';
-let roomCode = localStorage.getItem(ROOM_KEY) || newRoomCode();
-try { localStorage.setItem(ROOM_KEY, roomCode); } catch { /* private mode */ }
-let relay = null;
-const onlineBox = $('#onlineOn');
-const onlineStatus = $('#onlineStatus');
-const shareLink = $('#shareLink');
-const viewerUrl = () => new URL(`viewer.html?room=${roomCode}&w=1920&h=1080`, location.href).href;
-
-function setOnlineStatus(n) {
-  const local = /^(localhost|127\.|0\.0\.0\.0)/.test(location.hostname);
-  onlineStatus.dataset.ok = String(n > 0);
-  onlineStatus.textContent = !relay ? 'off'
-    : n > 0 ? `live · room ${roomCode}${local ? ' · this is a localhost link: use the github.io controller to share' : ''}`
-      : 'connecting…';
-}
-function startRelay() {
-  relay?.close();
-  relay = relaySender(roomCode, setOnlineStatus);
-  setOnlineStatus(0);
-  // once connected, send the current scene + clock (kept by the relay for late joiners)
-  const first = setInterval(() => {
-    if (!relay) { clearInterval(first); return; }
-    if (relay.connected) { clearInterval(first); push(); sendClock(); }
-  }, 300);
-}
-function stopRelay() { relay?.close(); relay = null; setOnlineStatus(0); }
-
-shareLink.value = viewerUrl();
-onlineBox.checked = localStorage.getItem(ONLINE_KEY) !== 'off';
-if (onlineBox.checked) startRelay(); else setOnlineStatus(0);
-onlineBox.addEventListener('change', () => {
-  try { localStorage.setItem(ONLINE_KEY, onlineBox.checked ? 'on' : 'off'); } catch { /* private mode */ }
-  if (onlineBox.checked) startRelay(); else stopRelay();
-});
-$('#copyLink').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(shareLink.value); onlineStatus.textContent = 'link copied'; setTimeout(() => setOnlineStatus(relay?.connected || 0), 2000); }
-  catch { shareLink.select(); }
-});
-$('#newRoom').addEventListener('click', () => {
-  roomCode = newRoomCode();
-  try { localStorage.setItem(ROOM_KEY, roomCode); } catch { /* private mode */ }
-  shareLink.value = viewerUrl();
-  if (relay) startRelay();
-});
 
 // ------------------------------------------------------------- status
 
 let lastStatus = 0;
 const statusEl = $('#status');
 const statusText = $('#statusText');
-const loopFill = $('#loopFill');
-const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 if (channel) {
   channel.onmessage = (e) => {
     const m = e.data || {};
     if (m.type === 'hello' && m.from === 'viewer') push();
+    else if (m.type === 'clock' && m.src && m.src !== CLOCK_ID) adoptClock(m);   // another controller's clock
     else if (m.type === 'state') { state = sanitize(m.state); saveState(state); render(); } // another controller
     else if (m.type === 'view' && m.song === pendingSave) {
       const s = SONG_SCENES[m.song];
-      views[songKey(s)] = { ...m.view, time: state.twHour, sky: [state.bgTop, state.bgMid, state.bgBottom] };
-      saveViews();
+      const entry = {
+        view: m.view, time: state.twHour, sky: [state.bgTop, state.bgMid, state.bgBottom], ver: s.viewVersion || 1,
+        settings: Object.fromEntries(SAVED_SETTINGS.map(k => [k, state[k]])),
+      };
       pendingSave = null;
-      // hold the captured view in the live state too
-      state.cameraPreset = m.view.camera;
-      applyView(m.view);
+      freshViews().then(async () => {
+        const before = views[songKey(s)];
+        views[songKey(s)] = entry;
+        if (await saveViews()) say(`Saved view, motion + atmosphere to ${pad(m.song + 1)} ${s.title}.`);
+        else {
+          if (before) views[songKey(s)] = before; else delete views[songKey(s)];
+          say("Couldn't write views.json. Is serve.py still running?");
+        }
+        render();
+      });
+      // hold the captured view in the live state too (the viewer is already on it)
+      state.customView = m.view;
+      state.cameraPreset = m.view.scene || 'view';
+      state.zoom = m.view.zoom; state.cameraAngle = m.view.elevation; state.cameraOrbit = 0;
+      state.cameraPanX = 0; state.cameraPanY = 0; state.cameraPanZ = 0;
       render();
       push();
-      say(`Saved view, ${pad(state.twHour)}:00 and sky to ${pad(m.song + 1)} ${s.title}.`);
     }
     else if (m.type === 'status') {
       lastStatus = performance.now();
       statusEl.dataset.live = 'true';
-      const p = presetById(m.preset);
-      statusText.textContent = `viewer live · ${mmss(m.t)} / ${mmss(LOOP_SECONDS)} · ${m.fps} fps · ${m.moving ? '→ ' : ''}${p.name}${m.auto ? '' : ' · paused'}`;
-      loopFill.style.width = `${(m.t / LOOP_SECONDS) * 100}%`;
+      statusText.textContent = `connected · ${m.fps} fps`;
     }
   };
   channel.postMessage({ type: 'hello', from: 'control' });
@@ -453,9 +493,9 @@ setInterval(() => {
   if (performance.now() - lastStatus > 1600) {
     statusEl.dataset.live = 'false';
     statusText.textContent = 'viewer not open';
-    loopFill.style.width = '0%';
   }
 }, 800);
 
 render();
 push();
+loadViews();

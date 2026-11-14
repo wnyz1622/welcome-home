@@ -3,16 +3,17 @@
 // state it receives, so every change arrives as a transition.
 
 import * as THREE from 'three';
-import { CHANNEL_NAME, LOOP_SECONDS, WORLD, TIMES, sunHeight, loadState, sanitize } from './config.js';
+import { CHANNEL_NAME, LOOP_SECONDS, WORLD, TIMES, STROKE_MODES, sunHeight, loadState, sanitize } from './config.js';
 import { shared, setStrokeMode } from './materials.js';
 import { makeMemoryAtlas, loadMemoryImages } from './memories.js';
 import { createWorld } from './world.js';
+import { createWeather } from './weather.js';
 import { createClouds } from './clouds.js';
 import { createBirds } from './birds.js';
 import { createCameraRig } from './camera.js';
 import { createFreecam } from './freecam.js'; // TEMP free camera
-import { presetById, TOUR, TOUR_SECONDS } from './presets.js';
-import { relayListener } from './relay.js';
+import { presetById, isView } from './presets.js';
+import { LAMP_HALOS } from './architecture.js';
 
 THREE.ColorManagement.enabled = false; // treat every hex color as-is, like ink on paper
 const TAU = Math.PI * 2;
@@ -31,18 +32,21 @@ renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 600);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1200);
 const rt = new THREE.WebGLRenderTarget(4, 4, { samples: 4 });
 
 shared.uAtlas.value = makeMemoryAtlas();
 loadMemoryImages(shared.uAtlas.value);
 const world = createWorld();
+const weather = createWeather(world);
+
+let rainOn = 1, snowOn = 1;
 scene.add(world.group);
 const clouds = createClouds();
 scene.add(clouds.group);
 const birds = createBirds();
 scene.add(birds.group);
-const rig = createCameraRig(camera, world.anchors);
+const rig = createCameraRig(camera, world.anchors, world.group);   // world.group: what close-ups check for things in the way
 const freecam = createFreecam(renderer.domElement, camera, () => rig.pose.target); // TEMP free camera
 
 // ------------------------------------------------------------- post pass
@@ -72,6 +76,10 @@ const post = new THREE.ShaderMaterial({
     uWashA: { value: new THREE.Color() },
     uWashB: { value: new THREE.Color() },
     uAir: { value: 0 },
+    uBlack: { value: 0 },                       // fade from black (song 1 arrival)
+    uRipple: { value: 0 },                      // water-ripple distortion
+    uPunch: { value: 1 },                       // contrast + saturation together (1 = as drawn)
+    uSkyDim: { value: 0 },                      // darkens the sky only, never the world's light
     uNightA: shared.uNightA,
     uNightB: shared.uNightB,
     uWashK: { value: new THREE.Vector2() },     // how much each side's hour colors the sky
@@ -92,7 +100,8 @@ const post = new THREE.ShaderMaterial({
     uniform float uPx;
     uniform vec3 uTop, uMid, uBot;
     uniform float uTime, uLoop, uGrain, uFrame, uHalftone;
-    uniform float uTz, uGlowR, uAir, uNightA, uNightB, uSplit, uLeftA, uSunRA;
+    uniform float uRipple, uPunch, uSkyDim;
+    uniform float uTz, uGlowR, uAir, uBlack, uNightA, uNightB, uSplit, uLeftA, uSunRA;
     uniform vec2 uWashK, uSunUvA, uSunUvB, uMoonUvA, uMoonUvB, uSunAmt, uMoonAmt;
     uniform vec2 uGlowA, uGlowB;
     uniform vec3 uGlowColA, uGlowColB, uWashA, uWashB;
@@ -193,8 +202,11 @@ const post = new THREE.ShaderMaterial({
         vec2 cellId = floor(gl_FragCoord.xy / cellPx);
         vec2 local = fract(gl_FragCoord.xy / cellPx) - 0.5;
         vec2 cc = ((cellId + 0.5) * cellPx / uRes - 0.5) * asp;
+        // dense at the bottom, fading upward, plus a large soft patch that
+        // wanders the whole upper half (corners included), once per loop
+        vec2 wander = vec2(0.82 * cos(ph), 0.26 + 0.14 * sin(ph * 2.0));
         float field = smoothstep(0.15, 0.55, -cc.y + 0.12 * sin(ph + cc.x * 3.0))
-                    + 0.35 * smoothstep(0.5, 0.0, length(cc - vec2(0.55 * cos(ph), 0.3)));
+                    + 0.55 * smoothstep(0.7, 0.0, length(cc - wander));
         field = clamp(field, 0.0, 1.0) * uHalftone;
         float dotR = 0.5 * sqrt(field) * 1.15;
         float dotMask = 1.0 - smoothstep(dotR - 0.08, dotR + 0.02, length(local));
@@ -212,30 +224,25 @@ const post = new THREE.ShaderMaterial({
       return smoothstep(0.35, 0.75, a);
     }
 
-    // looking out of an airliner: a row of five rounded windows in the cabin
-    // wall, shades up, with clouds drifting past outside
+    // looking out of an airliner: three rounded windows in the cabin wall,
+    // well apart, shades up, with clouds drifting past outside
     vec3 airplaneWindow(vec3 col, vec2 uv) {
       vec2 asp = vec2(uRes.x / uRes.y, 1.0);
       vec2 c = (uv - 0.5) * asp;
-      float e = uAir * uAir * (3.0 - 2.0 * uAir);
-      float s = mix(3.2, 1.0, e);
-      vec2 hs = vec2(0.11, 0.16) * s;
-      float rad = 0.085 * s;
-      float gap = 0.33 * s;
-      // nearest of the five windows
-      float k = clamp(floor(c.x / gap + 0.5), -2.0, 2.0);
+      float s = 1.0;
+      vec2 hs = vec2(0.18, 0.27) * s;   // half-size of each window (screen height = 1)
+      float rad = 0.14 * s;             // corner rounding
+      float gap = 0.6 * s;              // centre-to-centre spacing
+      // nearest of the three windows
+      float k = clamp(floor(c.x / gap + 0.5), -1.0, 1.0);
       vec2 lc = c - vec2(k * gap, 0.02 * s);
       vec2 q = abs(lc) - hs + rad;
       float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rad;
       if (sd > 0.0) {
-        // cabin wall: molded plastic, a bevel into each window, a second surround
-        float bevel = smoothstep(0.0, 0.05 * s, sd);
-        vec3 wall = mix(vec3(0.74, 0.73, 0.72), vec3(0.93, 0.91, 0.88), bevel);
-        float ring = smoothstep(0.06 * s, 0.075 * s, sd) - smoothstep(0.075 * s, 0.09 * s, sd);
-        wall = mix(wall, wall * 0.9, ring);
-        // the raised shade, tucked into the top of the surround
-        if (lc.y > hs.y && abs(lc.x) < hs.x - 0.01 * s && sd < 0.05 * s) wall = mix(wall, vec3(0.88, 0.86, 0.83), 0.8);
-        wall *= 1.0 - 0.18 * smoothstep(0.35, 1.0, length(c));
+        // dark cabin: the wall is nearly black, so only the view outside reads;
+        // a faint lit bevel catches the daylight right at each window's edge
+        float rim = 1.0 - smoothstep(0.0, 0.03 * s, sd);
+        vec3 wall = mix(vec3(0.015, 0.015, 0.02), col * 0.18 + 0.02, rim);
         return wall;
       }
       // outside: the world, then clouds sliding past (whole laps per loop)
@@ -260,10 +267,23 @@ const post = new THREE.ShaderMaterial({
       vec2 uv = vUv;
       vec2 fc = floor(gl_FragCoord.xy / uPx);
 
+      // ripple: the picture wavers like it's seen through water (a blurred memory)
+      if (uRipple > 0.001) {
+        float rp = uTime / uLoop;
+        vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+        vec2 c = (uv - 0.5) * asp;
+        float r = length(c);
+        vec2 w = vec2(sin(uv.y * 26.0 + TAU * rp * 12.0) + 0.5 * sin(uv.y * 61.0 - TAU * rp * 20.0),
+                      sin(uv.x * 19.0 + TAU * rp * 9.0) + 0.4 * sin(uv.x * 47.0 + TAU * rp * 15.0));
+        vec2 rad = c / (r + 1e-4) * sin(r * 48.0 - TAU * rp * 16.0) * smoothstep(0.9, 0.1, r);
+        uv += (w * 0.0035 + rad * 0.0045) * uRipple / asp;
+      }
+
       vec4 s = texture2D(tScene, uv);
 
-      vec3 col = sky(uv) * (1.0 - s.a) + s.rgb;   // scene is premultiplied
-      if (uAir > 0.001) col = airplaneWindow(col, vUv);
+      vec3 ground = sky(uv) * (1.0 - uSkyDim);   // sky dimmer: background only
+      vec3 col = ground * (1.0 - s.a) + s.rgb;   // scene is premultiplied
+      if (uAir > 0.001) col = mix(col, airplaneWindow(col, vUv), uAir);
 
       float n1 = hash(fc) - 0.5;
       float n2 = hash(floor(fc / 2.0) + 17.0) - 0.5;
@@ -273,8 +293,15 @@ const post = new THREE.ShaderMaterial({
       float speck = step(0.988, hash(fc * 1.37 + 3.0));
       col = mix(col, col * 0.85, speck * uGrain * 0.6);
 
+      // Contrast: one value drives contrast and saturation together, so a
+      // washed-out projection (e.g. on a scrim) can be pushed back; < 1 softens
+      float lum = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(vec3(lum), col, uPunch);
+      col = (col - 0.5) * uPunch + 0.5;
+
       vec2 vc = vUv - 0.5;
       col *= 1.0 - dot(vc, vc) * 0.16;
+      col *= 1.0 - uBlack;
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
     }`,
   depthTest: false,
@@ -321,14 +348,24 @@ let target = loadState();
 // ?preset=taiwan starts on a camera preset (handy for recording / checking views)
 if (params.get('preset')) {
   const p = presetById(params.get('preset'));
-  target = { ...target, cameraPreset: p.id, zoom: p.zoom, cameraAngle: p.elevation, cameraOrbit: 0, tour: false };
+  target = { ...target, cameraPreset: p.id, customView: null, zoom: p.zoom, cameraAngle: p.elevation, cameraOrbit: 0 };
+}
+// ?stroke=lines&ripple=0.6&twHour=22 ... sets any setting at start (for checking looks)
+for (const [k, v] of params) {
+  if (k === 'preset' || !(k in target)) continue;
+  if (typeof target[k] === 'number' && Number.isFinite(+v)) target[k] = +v;
+  else if (typeof target[k] === 'string' && (k !== 'stroke' || STROKE_MODES.includes(v))) target[k] = v;
+  else if (typeof target[k] === 'boolean') target[k] = v === '1' || v === 'true';
 }
 const EASED = [
+  'contrast', 'skyDim',
   'rotationSpeed', 'floatIntensity', 'birdSpeed', 'zoom', 'cameraAngle', 'cameraOrbit',
   'cameraPanX', 'cameraPanY', 'cameraPanZ',
   'windowLight', 'clouds', 'cloudDensity', 'cloudOpacity', 'cloudDrift', 'cloudSoftness',
-  'halftone', 'grain', 'timezone', 'darkness', 'split',
+  'halftone', 'grain', 'timezone', 'darkness', 'split', 'rain', 'snow',
 ];
+// what the camera is following: a song's saved view, or else a preset
+const specOf = (st) => (isView(st.customView) ? st.customView : presetById(st.cameraPreset));
 const cur = {};
 for (const k of EASED) cur[k] = target[k];
 const COLORS = ['bgTop', 'bgMid', 'bgBottom'];
@@ -367,16 +404,20 @@ let angle = 0;        // island rotation (accumulated so speed changes never jum
 let birdPhase = 0;
 let cloudPhase = 0;
 let air = 0;
+let blackStart = -1;   // when the fade from black began (song 1)
 let lastCue = target.cameraCue;
-let easeBoostUntil = 0, easeRate = 2.4;
+let easeBoostUntil = 0;
 let strokeMode = null;
-let tourIndex = -1;
+let breath = target.breatheOn ? 1 : 0;   // eased slowly, so breathing starts and stops gently
+let ripple = target.rippleOn ? 1 : 0;     // the ripple switch fades over ~3 s
+// Floating / Displacement moves at a steady pace with a soft start and stop,
+// so going from float to scatter visibly breaks apart (about 2 s per step of 1)
+const floatAnim = { from: target.floatIntensity, to: target.floatIntensity, start: 0, dur: 0 };
+let sunSide = null;                        // eased 0..1: which island has the sun
 
 world.setLayout(target.layoutSeed, performance.now() / 1000, true);
-rig.jump(target.cameraPreset);
-const startPreset = presetById(target.cameraPreset);
+rig.jump(specOf(target));
 cur.zoom = target.zoom; cur.cameraAngle = target.cameraAngle;
-void startPreset;
 
 function applyState(s, ease) {
   const prev = target;
@@ -385,54 +426,59 @@ function applyState(s, ease) {
   world.setLayout(target.layoutSeed, nowSec);
   if (target.cameraCue !== lastCue || target.cameraPreset !== prev.cameraPreset) {
     lastCue = target.cameraCue;
-    const p = presetById(target.cameraPreset);
-    if (!target.tour) {
-      rig.go(target.cameraPreset, target.transition * (p.durationScale || 1), nowSec);
-      // the rig interpolates zoom/angle itself during a transition
-      cur.zoom = target.zoom; cur.cameraAngle = target.cameraAngle; cur.cameraOrbit = target.cameraOrbit;
-      cur.cameraPanX = target.cameraPanX; cur.cameraPanY = target.cameraPanY; cur.cameraPanZ = target.cameraPanZ;
-      freecam.reset();   // a new cue starts clean, so saved song views land exactly
-    }
+    const p = specOf(target);
+    if (p.overlay === 'airplane') {
+      // song 1: start from black and fade in on the windows
+      rig.jump(p);
+      blackStart = nowSec;
+      air = 1;
+    } else rig.go(p, target.transition * (p.durationScale || 1), nowSec);
+    // the rig interpolates zoom/angle itself during a transition
+    cur.zoom = target.zoom; cur.cameraAngle = target.cameraAngle; cur.cameraOrbit = target.cameraOrbit;
+    cur.cameraPanX = target.cameraPanX; cur.cameraPanY = target.cameraPanY; cur.cameraPanZ = target.cameraPanZ;
+    freecam.reset();   // a new cue starts clean, so saved song views land exactly
   }
   if (ease) {
-    // atmosphere/float changes from a scene follow the camera's pace
-    easeRate = Math.min(2.4, 3 / Math.max(0.5, target.transition));
-    easeBoostUntil = nowSec + target.transition;
-  }
-  if (prev.tour && !target.tour) {
-    rig.go(target.cameraPreset, target.transition, nowSec);
-    tourIndex = -1;
+    // atmosphere changes from a scene take exactly as long as the camera move
+    const p = specOf(target);
+    easeBoostUntil = nowSec + Math.max(0.5, target.transition * (p.durationScale || 1));
   }
 }
 
 // ------------------------------------------------------------- sync
 
 // The show clock comes from the controller, so every viewer (here or on
-// another computer) is at the same moment of the loop. Small drift is left
-// alone; anything bigger snaps into line.
+// another tab) is at the same moment of the loop. Drift is never snapped
+// away mid-show: it is bled in over a couple of seconds, invisibly. Only the
+// first sync, or a big gap (a reload, a sleeping laptop), jumps straight there.
 const wrapD = (d, p) => ((((d % p) + p * 1.5) % p) - p / 2);
 let clockSynced = false;
+const clockFix = { t: 0, angle: 0, bird: 0, cloud: 0 };   // corrections still to apply
+// Follow one controller's clock at a time. A clock from anyone else (a second
+// controller tab, an old version left open) is ignored while ours is alive.
+let clockSrc = null, clockSrcSeen = -1e9;
 function syncClock(c) {
-  const lat = 0.15;   // rough network delay
-  const speedT = target.autoAnimate ? lat : 0;
-  const ct = c.t + speedT;
-  if (!clockSynced || Math.abs(wrapD(ct - t, LOOP_SECONDS)) > 0.35) t = ct;
-  const ca = c.angle + (target.autoAnimate ? target.rotationSpeed * TAU / LOOP_SECONDS * lat : 0);
-  if (!clockSynced || Math.abs(wrapD(ca - angle, TAU)) > 0.03) angle = ca;
-  const cb = c.bird + (target.autoAnimate ? target.birdSpeed * lat / LOOP_SECONDS : 0);
-  if (!clockSynced || Math.abs(wrapD(cb - birdPhase, 1)) > 0.003) birdPhase = cb;
-  const cc = c.cloud + (target.autoAnimate ? target.cloudDrift * lat / LOOP_SECONDS : 0);
-  if (!clockSynced || Math.abs(wrapD(cc - cloudPhase, 1)) > 0.003) cloudPhase = cc;
+  const nowS = performance.now() / 1000;
+  const src = c.src || 'old';
+  if (clockSrc && src !== clockSrc && nowS - clockSrcSeen < 10) return;
+  clockSrc = src; clockSrcSeen = nowS;
+  const eT = wrapD(c.t - t, LOOP_SECONDS);
+  const eA = wrapD(c.angle - angle, TAU);
+  const eB = wrapD(c.bird - birdPhase, 1);
+  const eC = wrapD(c.cloud - cloudPhase, 1);
+  if (!clockSynced || Math.abs(eT) > 5) {
+    t = c.t; angle = c.angle; birdPhase = c.bird; cloudPhase = c.cloud;
+    clockFix.t = clockFix.angle = clockFix.bird = clockFix.cloud = 0;
+  } else {
+    clockFix.t = eT; clockFix.angle = eA; clockFix.bird = eB; clockFix.cloud = eC;
+  }
   clockSynced = true;
 }
-
-// ?room=CODE: also follow a controller on another computer, through the relay
-const room = params.get('room');
-if (room) {
-  relayListener(room, (kind, data) => {
-    if (kind === 'state' && data.state) applyState(data.state, !!data.ease);
-    else if (kind === 'clock') syncClock(data);
-  });
+function bleedClock(dt) {
+  const f = Math.min(1, dt / 2);   // about 2 s to absorb a correction
+  const dT = clockFix.t * f, dA = clockFix.angle * f, dB = clockFix.bird * f, dC = clockFix.cloud * f;
+  t += dT; angle += dA; birdPhase += dB; cloudPhase += dC;
+  clockFix.t -= dT; clockFix.angle -= dA; clockFix.bird -= dB; clockFix.cloud -= dC;
 }
 
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel(CHANNEL_NAME) : null;
@@ -442,36 +488,71 @@ if (channel) {
     const m = e.data || {};
     if (m.type === 'state') applyState(m.state, !!m.ease);
     else if (m.type === 'clock') syncClock(m);
-    else if (m.type === 'restart') { t = 0; angle = 0; birdPhase = 0; cloudPhase = 0; }
     else if (m.type === 'captureView') channel.postMessage({ type: 'view', song: m.song, view: captureView() });
     else if (m.type === 'hello' && m.from === 'control') sendStatus();
   };
   channel.postMessage({ type: 'hello', from: 'viewer' });
 }
-// The camera exactly as it is now (preset + sliders + mouse orbit/zoom/pan),
-// folded into the state so the view holds when the mouse offsets are cleared.
+// The camera exactly as it is now (preset or view + sliders + mouse), made
+// into a saved view of its own: a fixed spot in the world, or, if the camera
+// was following something, still following it. The live camera switches to
+// that view so nothing moves when the mouse offsets are cleared.
+// A name for what the camera is looking at: the landmark nearest the middle
+// of the picture (big islands count from their edge), plus wide / close-up.
+const LANDMARKS = [
+  ['ny', 'New York', 11], ['tw', 'Taiwan', 10],
+  ['busStop', 'Bus Stop', 3], ['grove', 'Grove', 3], ['subway', 'Subway', 3], ['luggage', 'Baggage Belt', 4.5],
+  ['lamp', 'Street Light', 1.5], ['suitcase', 'Suitcase', 1.7], ['lighthouse', 'Lighthouse', 2],
+  ['windmill', 'Windmill', 2], ['windowIsland', 'Standing Window', 1.5], ['tinyHouse', 'Tiny House', 1.2],
+  ['stairs', 'Spiral Stairs', 1.6], ['wall', 'Gable Wall', 1.5],
+  ['ladder', 'Ladder', 2], ['portals', 'Portals', 2], ['apple', 'Big Apple', 2.5],
+  ['departures', 'Departures Board', 2], ['clock', 'Big Clock', 2], ['bridgeWindow', 'Bridge', 2],
+  ['crossroads', 'Crossroads', 1.2], ['twWindow', 'Taiwan window', 0.3], ['nyWindow', 'New York window', 0.3],
+  ['airplane', 'Airliner', 2], ['birdPair', 'Two Birds', 1.5], ['roadBus', 'the bus', 0.6],
+];
+const SCENE_NAMES = { bathroom: 'Bathroom', lookout: 'Lookout', dining: 'Dining Room', airplane: 'Airplane Window' };
+const lmV = new THREE.Vector3();
+function nameForCamera(view) {
+  if (view?.scene && SCENE_NAMES[view.scene]) return SCENE_NAMES[view.scene];
+  camera.updateMatrixWorld();
+  const halfH = (camera.top - camera.bottom) / 2 / camera.zoom;
+  let best = null, bestScore = Infinity, mains = 0;
+  for (const [key, label, radius] of LANDMARKS) {
+    const a = world.anchors[key];
+    if (!a) continue;
+    a.getWorldPosition(lmV);
+    lmV.project(camera);
+    if (lmV.z < -1 || lmV.z > 1) continue;
+    const r = radius / halfH;                       // its size on screen
+    const d = Math.hypot(lmV.x * aspect, lmV.y);
+    if (Math.abs(lmV.x) - r / aspect > 1.05 || Math.abs(lmV.y) - r > 1.05) continue;
+    if (key === 'ny' || key === 'tw') mains++;
+    const score = Math.max(0, d - r * 0.7) + (radius < 1 ? 0.15 : 0);
+    if (score < bestScore) { bestScore = score; best = label; }
+  }
+  if (!best) return 'Open sky';
+  if (camera.zoom < 0.9 && mains === 2) return 'Wide · both islands';
+  const z = camera.zoom;
+  return best + (z >= 5 ? ' · close-up' : z < 1 ? ' · wide' : '');
+}
+
 function captureView() {
   const f = freecam.get();
-  const panL = f.pan.applyQuaternion(rig.frameQuat.clone().invert());
-  const r1 = (v, n = 100) => Math.round(v * n) / n;
-  const view = {
-    camera: rig.preset.id,
-    zoom: r1(cur.zoom * f.zoom, 1000),
-    angle: r1(Math.min(85, Math.max(-20, cur.cameraAngle + THREE.MathUtils.radToDeg(f.el))), 10),
-    orbit: r1(((cur.cameraOrbit + THREE.MathUtils.radToDeg(f.az) + 540) % 360) - 180, 10),
-    pan: [r1(cur.cameraPanX + panL.x), r1(cur.cameraPanY + panL.y), r1(cur.cameraPanZ + panL.z)],
-  };
-  Object.assign(target, { zoom: view.zoom, cameraAngle: view.angle, cameraOrbit: view.orbit,
-    cameraPanX: view.pan[0], cameraPanY: view.pan[1], cameraPanZ: view.pan[2] });
+  const T = rig.pose.target.clone().add(f.pan);
+  const D = camera.position.clone().sub(T).normalize();
+  const view = rig.makeView(rig.preset, T, D, camera.zoom);
+  view.name = nameForCamera(view);
+  Object.assign(target, { customView: view, zoom: view.zoom, cameraAngle: view.elevation, cameraOrbit: 0,
+    cameraPanX: 0, cameraPanY: 0, cameraPanZ: 0 });
   for (const k of ['zoom', 'cameraAngle', 'cameraOrbit', 'cameraPanX', 'cameraPanY', 'cameraPanZ']) cur[k] = target[k];
   freecam.reset();
+  rig.jump(view);
   return view;
 }
 
 function sendStatus() {
   channel?.postMessage({
-    type: 'status', t: t % LOOP_SECONDS, fps: Math.round(fps), auto: target.autoAnimate,
-    preset: rig.preset.id, moving: rig.transitioning,
+    type: 'status', fps: Math.round(fps),
   });
 }
 setInterval(sendStatus, 500);
@@ -481,7 +562,6 @@ window.addEventListener('keydown', (e) => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen?.();
   }
-  if (e.key === 'r') { t = 0; angle = 0; birdPhase = 0; cloudPhase = 0; }
 });
 
 // ------------------------------------------------------------- loop
@@ -493,6 +573,7 @@ function toUv(v, out) {
 }
 const nyCenter = new THREE.Vector3(), twCenter = new THREE.Vector3();
 const camPan = new THREE.Vector3();
+const haloPos = new THREE.Vector3();
 const viewDir = new THREE.Vector3();
 
 let last = performance.now();
@@ -500,15 +581,35 @@ let frame = 0;
 function tick(now) {
   const nowSec = now / 1000;
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));   // the first frame can arrive "before" start
+  const clockDt = Math.max(0, Math.min(3600, (now - last) / 1000));   // real time, for the loop clock
   last = now;
   fps += ((dt > 0 ? 1 / dt : 60) - fps) * 0.05;
   frame++;
 
   // ease every continuous parameter toward its target
-  const rate = nowSec < easeBoostUntil ? easeRate : 2.4;
-  const k = 1 - Math.exp(-dt * rate);
+  // During a song change, everything (sky, hour, light, effects) moves at a
+  // steady pace and lands together with the camera, instead of jumping most
+  // of the way in the first second.
+  // a big camera turn takes longer; the sky and light stretch to match it
+  if (nowSec < easeBoostUntil && rig.transitioning) easeBoostUntil = Math.max(easeBoostUntil, rig.endTime);
+  const k = nowSec < easeBoostUntil
+    ? Math.min(1, dt / Math.max(dt, easeBoostUntil - nowSec))
+    : 1 - Math.exp(-dt * 2.4);
   const kCam = 1 - Math.exp(-dt * 2.4);
+  if (target.floatIntensity !== floatAnim.to) {
+    floatAnim.from = cur.floatIntensity;
+    floatAnim.to = target.floatIntensity;
+    floatAnim.start = nowSec;
+    floatAnim.dur = Math.max(1.5, Math.abs(floatAnim.to - floatAnim.from) * 2);
+  }
+  {
+    const u = floatAnim.dur > 0 ? Math.min(1, (nowSec - floatAnim.start) / floatAnim.dur) : 1;
+    const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+    cur.floatIntensity = floatAnim.from + (floatAnim.to - floatAnim.from) * e;
+  }
   for (const key of EASED) {
+    // floating / displacement drifts apart and back together over ~3 s
+    if (key === 'floatIntensity') continue;   // its own steady animation, below
     const kk = (key === 'zoom' || key.startsWith('camera')) ? kCam : k;
     if (key === 'zoom') cur.zoom = Math.exp(Math.log(cur.zoom) + (Math.log(target.zoom) - Math.log(cur.zoom)) * kk);
     else cur[key] += (target[key] - cur[key]) * kk;
@@ -529,29 +630,30 @@ function tick(now) {
   if (strokeMode !== target.stroke) { strokeMode = target.stroke; setStrokeMode(strokeMode); }
 
   if (target.autoAnimate) {
-    t += dt;
-    angle += cur.rotationSpeed * TAU / LOOP_SECONDS * dt;
-    birdPhase += cur.birdSpeed * dt / LOOP_SECONDS;
-    cloudPhase += cur.cloudDrift * dt / LOOP_SECONDS;
+    // the loop clock counts real time, even across slow frames or a moment
+    // when the browser paused this window, so it never falls behind the
+    // controller and never has to jump to catch up
+    const cdt = clockDt;
+    t += cdt;
+    angle += cur.rotationSpeed * TAU / LOOP_SECONDS * cdt;
+    birdPhase += cur.birdSpeed * cdt / LOOP_SECONDS;
+    cloudPhase += cur.cloudDrift * cdt / LOOP_SECONDS;
   }
+  bleedClock(dt);
   const loopT = t % LOOP_SECONDS;
   const ph = loopT / LOOP_SECONDS;
+  ripple += ((target.rippleOn ? 1 : 0) - ripple) * (1 - Math.exp(-dt * 1.0));
+  if (Math.abs((target.rippleOn ? 1 : 0) - ripple) < 1e-3) ripple = target.rippleOn ? 1 : 0;
+  // breathing switch: eases over about 4 s
+  breath += ((target.breatheOn ? 1 : 0) - breath) * (1 - Math.exp(-dt * 0.9));
+  if (Math.abs((target.breatheOn ? 1 : 0) - breath) < 1e-3) breath = target.breatheOn ? 1 : 0;
 
-  // ---- autonomous camera tour (deterministic, from the animation clock)
-  let elevation = cur.cameraAngle, zoom = cur.zoom, orbit = cur.cameraOrbit;
-  if (target.tour) {
-    const idx = Math.floor(t / TOUR_SECONDS) % TOUR.length;
-    if (idx !== tourIndex) {
-      tourIndex = idx;
-      const p = presetById(TOUR[idx]);
-      rig.go(p.id, target.transition * (p.durationScale || 1), nowSec);
-    }
-    elevation = rig.preset.elevation; zoom = rig.preset.zoom; orbit = 0;
-  }
-  const pan = target.tour ? null : camPan.set(cur.cameraPanX, cur.cameraPanY, cur.cameraPanZ);
+  const elevation = cur.cameraAngle, zoom = cur.zoom, orbit = cur.cameraOrbit;
+  const pan = camPan.set(cur.cameraPanX, cur.cameraPanY, cur.cameraPanZ);
 
   // ---- shared uniforms
   shared.uTime.value = loopT;
+  shared.uPxH.value = renderer.domElement.height;
   shared.uWindowLight.value = cur.windowLight;
   shared.uTz.value = 1;     // the hour's tint always applies (day tint is white)
   shared.uTintA.value.copy(tzCur.A.tint); shared.uTintB.value.copy(tzCur.B.tint);
@@ -564,7 +666,14 @@ function tick(now) {
     floatI: cur.floatIntensity, houseCount: target.houseCount,
     showMain: target.showMain, showSatellites: target.showSatellites,
     airplaneVisible: target.airplane && air < 0.5,
+    presetId: rig.preset.scene || rig.preset.id,
+    breathe: breath,
   });
+  // weather switches fade in and out over about a second
+  // weather switches: rain and snow build up and die away over about 4 s
+  rainOn += ((target.rainOn ? 1 : 0) - rainOn) * (1 - Math.exp(-dt * 0.75));
+  snowOn += ((target.snowOn ? 1 : 0) - snowOn) * (1 - Math.exp(-dt * 0.75));
+  weather.update({ rain: cur.rain * rainOn, snow: cur.snow * snowOn, pxH: renderer.domElement.height });
   world.islands[0].root.getWorldPosition(nyCenter);
   world.islands[1].root.getWorldPosition(twCenter);
   birds.update({
@@ -579,9 +688,16 @@ function tick(now) {
   camera.getWorldDirection(viewDir);
   shared.uViewDir.value.copy(viewDir);
 
+  // the cabin windows: in quickly; out slowly over the whole camera move
   const airTarget = rig.preset.overlay === 'airplane' ? 1 : 0;
-  air += (airTarget - air) * (1 - Math.exp(-dt * 1.3));
-  if (Math.abs(airTarget - air) < 0.001) air = airTarget;
+  const airOut = Math.max(0.8, target.transition * (rig.preset.durationScale || 1));
+  air = airTarget ? Math.min(1, air + dt / 0.8) : Math.max(0, air - dt / airOut);
+  let black = 0;
+  if (blackStart >= 0) {
+    const u = Math.min(1, Math.max(0, (nowSec - blackStart - 0.4) / 3));
+    black = 1 - u * u * (3 - 2 * u);
+    if (u >= 1) blackStart = -1;
+  }
 
   clouds.update({
     phase: cloudPhase, ph, camera, camTarget: rig.pose.target,
@@ -600,17 +716,28 @@ function tick(now) {
   const leftA = posA.x <= posB.x;
   const sp = cur.split;
   const clampX = (x, isLeft) => Math.min(THREE.MathUtils.lerp(0.9, isLeft ? 0.42 : 0.9, sp), Math.max(THREE.MathUtils.lerp(0.1, isLeft ? 0.1 : 0.58, sp), x));
-  const sunUv = (L, pos, isLeft, out) => out.set(clampX(pos.x, isLeft), 0.6 + 0.25 * Math.min(1, Math.max(0, L.e)));
-  const moonUv = (pos, isLeft, out) => out.set(clampX(pos.x, isLeft), 0.79);
-  const sunAmt = (L) => fall(-0.15, 0.05, L.e);
+  // one sun and one moon: the sun goes to whichever island is more in
+  // daylight, the moon to the other; they slide past each other at 06:00 and
+  // 18:00 and always keep apart
   const U = post.uniforms;
-  sunUv(LA, posA, leftA, U.uSunUvA.value).lerp(pinSun, henge);
-  sunUv(LB, posB, !leftA, U.uSunUvB.value);
-  moonUv(posA, leftA, U.uMoonUvA.value);
-  moonUv(posB, !leftA, U.uMoonUvB.value);
+  const xA = clampX(posA.x, leftA), xB = clampX(posB.x, !leftA);
+  // which island has the sun. However fast the Time slider moves, they trade
+  // places at a steady pace (about 4 s), and pass one above the other.
+  const sTarget = LA.e > LB.e ? 1 : 0;                  // 1 = New York has the sun
+  if (sunSide === null) sunSide = sTarget;
+  sunSide += Math.max(-dt / 4, Math.min(dt / 4, sTarget - sunSide));
+  const sA = sunSide * sunSide * (3 - 2 * sunSide);
+  const sunX = THREE.MathUtils.lerp(xB, xA, sA), moonX = THREE.MathUtils.lerp(xA, xB, sA);
+  let sunY = 0.6 + 0.22 * Math.min(1, Math.max(0, Math.max(LA.e, LB.e)));
+  let moonY = 0.86;
+  // keep apart vertically, never by jumping sideways: the sun dips, the moon lifts
+  const near = Math.max(Math.sin(Math.PI * sA) * 0.12, Math.max(0, 0.2 - Math.abs(sunX - moonX)) * 0.6);
+  sunY -= near; moonY = Math.min(0.94, moonY + near * 0.4);
+  U.uSunUvA.value.set(sunX, sunY).lerp(pinSun, henge);
+  U.uMoonUvA.value.set(moonX, moonY);
   U.uSunRA.value = THREE.MathUtils.lerp(0.05, pinR, henge);
-  U.uSunAmt.value.set(Math.max(sunAmt(LA), henge), sunAmt(LB)).multiplyScalar(1 - air);
-  U.uMoonAmt.value.set(LA.night * (1 - henge), LB.night).multiplyScalar(1 - air);
+  U.uSunAmt.value.set(1 - air, 0);
+  U.uMoonAmt.value.set((1 - henge) * (1 - air), 0);
   U.uWashK.value.set(tzCur.A.washK, tzCur.B.washK);
   U.uSplit.value = sp;
   U.uLeftA.value = leftA ? 1 : 0;
@@ -620,9 +747,23 @@ function tick(now) {
   post.uniforms.uMid.value.copy(cur.bgMid);
   post.uniforms.uBot.value.copy(cur.bgBottom);
   post.uniforms.uGrain.value = cur.grain;
-  post.uniforms.uHalftone.value = cur.halftone;
+  // the halftone breathes on its own: 30%–70%, three breaths per loop
+  post.uniforms.uHalftone.value = 0.5 + 0.2 * Math.sin(TAU * ph * 3);
   post.uniforms.uFrame.value = frame;
   post.uniforms.uAir.value = air;
+  post.uniforms.uBlack.value = black;
+  post.uniforms.uRipple.value = ripple;
+  post.uniforms.uPunch.value = cur.contrast;
+  post.uniforms.uSkyDim.value = cur.skyDim;
+
+  // street lamps glow with the night on their side of the world
+  for (const h of LAMP_HALOS) {
+    h.getWorldPosition(haloPos);
+    const w = fall(WORLD.tzBlend[0], WORLD.tzBlend[1], haloPos.x);
+    const n = shared.uNightA.value + (shared.uNightB.value - shared.uNightA.value) * w;
+    h.material.opacity = Math.min(0.5, n * 0.5);   // kept soft: many glows overlap
+    h.visible = n > 0.02;
+  }
   toUv(proj.copy(nyCenter).add(new THREE.Vector3(0, -3, 0)), post.uniforms.uGlowA.value);
   toUv(proj.copy(twCenter).add(new THREE.Vector3(0, -3, 0)), post.uniforms.uGlowB.value);
   post.uniforms.uGlowR.value = Math.min(1.4, Math.max(0.08, 15 * camera.zoom / (2 * halfH0)));
@@ -645,6 +786,33 @@ requestAnimationFrame(tick);
 // debug / automation hook: window.__island.jump('window')
 window.__island = {
   jump: (id) => rig.jump(id),
-  get preset() { return rig.preset.id; },
+  get preset() { return rig.preset.id || 'view'; },
+  get breath() { return breath; },
+  get punch() { return post.uniforms.uPunch.value; },
+  get pose() { return { target: rig.pose.target.toArray(), zoom: rig.pose.zoom, dist: rig.pose.dist, progress: rig.progress }; },
+  get sky() { const U = post.uniforms; return { sun: U.uSunUvA.value.toArray(), moon: U.uMoonUvA.value.toArray() }; },
+  // turn an old-style song view (preset + sliders) into a saved view
+  convert(v) {
+    const p = presetById(v.camera);
+    const pan = new THREE.Vector3(...(v.pan || [0, 0, 0]));
+    const r = rig.resolve(p, v.angle ?? p.elevation, v.zoom ?? p.zoom, v.orbit ?? 0, pan);
+    return rig.makeView(p, r.target, r.dir, r.zoom);
+  },
+  // name a saved view by putting the camera there for a moment
+  nameView(v) {
+    rig.jump(v);
+    rig.update(performance.now() / 1000, v.elevation, v.zoom, 0, new THREE.Vector3());
+    const n = nameForCamera(v);
+    rig.jump(specOf(target));
+    return n;
+  },
+  // how far apart an old-style view and its converted view are, right now
+  compare(v) {
+    const p = presetById(v.camera);
+    const a = rig.resolve(p, v.angle ?? p.elevation, v.zoom ?? p.zoom, v.orbit ?? 0, new THREE.Vector3(...(v.pan || [0, 0, 0])));
+    const n = this.convert(v);
+    const b = rig.resolve(n, n.elevation, n.zoom, 0, new THREE.Vector3());
+    return { dTarget: a.target.distanceTo(b.target), dDir: a.dir.distanceTo(b.dir), dZoom: Math.abs(a.zoom - b.zoom) };
+  },
   scatter: () => ({ ...world.scatterInfo(), floatIntensity: cur.floatIntensity }),
 };

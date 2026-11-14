@@ -1,19 +1,62 @@
 // Camera rig: turns a preset (anchor + angles + distance + zoom) into an
-// orthographic camera pose every frame, and moves between presets with a
-// cinematic ease. The target is re-evaluated every frame during a transition,
+// orthographic camera pose every frame, and moves between presets at a
+// steady speed. The target is re-evaluated every frame during a transition,
 // so the camera lands precisely on things that are moving (a window on a
 // spinning island, a drifting point under the airplane).
 
 import * as THREE from 'three';
-import { presetById } from './presets.js';
+import { presetById, isView } from './presets.js';
 
 const V3 = THREE.Vector3;
 const d2r = THREE.MathUtils.degToRad;
-const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
 const llerp = (a, b, t) => Math.exp(Math.log(a) + (Math.log(b) - Math.log(a)) * t);
+const r2 = (v, n = 1000) => Math.round(v * n) / n;
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));   // angle into -π..π
+// a view direction as azimuth (round the vertical axis) and elevation
+const azEl = (d) => ({ az: Math.atan2(d.x, d.z), el: Math.asin(Math.min(1, Math.max(-1, d.y))) });
+// Orthographic: distance doesn't change the picture, only what gets cut off
+// in front of the camera. Normal views sit far back so nothing is clipped.
+// Short distances (< 20) are deliberate cutaways that put the camera just
+// outside a wall (window close-ups, interiors, street level); they only hold
+// while the camera is still zoomed in close. Zoomed out, a short distance
+// would slice through everything between camera and target, so it falls
+// back to FAR_BACK.
+export const FAR_BACK = 320;
+export function safeDistance(spec, zoom) {
+  const d = spec.distance ?? 100;
+  if (d >= 20) return FAR_BACK;
+  return zoom >= 0.6 * (spec.zoom ?? zoom) ? d : FAR_BACK;
+}
 
-export function createCameraRig(camera, anchors) {
+// a preset id, a preset, or a saved view: all go through the same rig
+const asSpec = (x) => (isView(x) ? x : presetById(typeof x === 'string' ? x : x?.id));
+
+// Close-ups no longer slice at a fixed distance. Once a camera comes in close
+// (below CUT_ON), it looks back along its own line of sight for the first
+// solid thing actually between it and the subject, and cuts just in front of
+// that. Nothing in the way: nothing is cut. Things within KEEP of the subject
+// (a window's cage, its sill) always count as the subject and stay.
+const CUT_ON = 40, KEEP = 1.2;
+
+export function createCameraRig(camera, anchors, occluders = null) {
   const pose = { target: new V3(0, 0.5, -1), dir: new V3(0, 0.5, 0.866).normalize(), dist: 140, zoom: 0.56 };
+  const ray = new THREE.Raycaster();
+  let cutD = FAR_BACK, cutFrame = 0;
+  const solid = (o) => {
+    if (!o.isMesh) return false;
+    const m = o.material;
+    if (Array.isArray(m) ? m.every(x => x.transparent) : m.transparent) return false;   // halos, beams, glass
+    for (let x = o; x; x = x.parent) if (!x.visible) return false;
+    return true;
+  };
+  function clearDistance(target, dir) {
+    ray.set(target, dir);
+    ray.near = KEEP; ray.far = FAR_BACK;
+    for (const h of ray.intersectObject(occluders, true)) {
+      if (solid(h.object)) return Math.max(KEEP - 0.2, h.distance - 0.3);
+    }
+    return FAR_BACK;
+  }
   const des = { target: new V3(), dir: new V3(), dist: 1, zoom: 1 };
   const q = new THREE.Quaternion();
   const p = new V3();
@@ -31,12 +74,12 @@ export function createCameraRig(camera, anchors) {
     des.target.applyQuaternion(q).add(p);
     const az = d2r((pr.azimuth || 0) + orbit), el = d2r(Math.min(85, Math.max(-20, elevation)));
     des.dir.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).applyQuaternion(q).normalize();
-    des.dist = pr.distance ?? 100;
     des.zoom = Math.max(0.05, zoom);
+    des.dist = safeDistance(pr, des.zoom);
   }
 
   function go(id, duration, nowSec) {
-    preset = presetById(id);
+    preset = asSpec(id);
     trans = {
       from: { target: pose.target.clone(), dir: pose.dir.clone(), dist: pose.dist, zoom: pose.zoom },
       start: nowSec,
@@ -45,18 +88,87 @@ export function createCameraRig(camera, anchors) {
     progress = 0;
   }
 
-  function jump(id) { preset = presetById(id); trans = null; progress = 1; }
+  function jump(id) { preset = asSpec(id); trans = null; progress = 1; }
+
+  // Turn a finished camera (where it looks, which way, how zoomed) into a
+  // saved view. src is the camera it was framed from: if that one follows
+  // something, the view is stored relative to it and keeps following;
+  // otherwise it is a fixed spot in the world. A scene camera (cabin windows,
+  // an interior) passes its scene on.
+  const iq = new THREE.Quaternion();
+  const tL = new V3(), dL = new V3();
+  function makeView(src, target, dir, zoom) {
+    const follow = !!src.follow;
+    const anchor = follow ? src.anchor : 'world';
+    const frame = follow ? (src.frame || 'world') : 'world';
+    tL.copy(target); dL.copy(dir).normalize();
+    if (follow) {
+      const a = anchors[anchor] || anchors.world;
+      a.updateWorldMatrix(true, false);
+      p.setFromMatrixPosition(a.matrixWorld);
+      tL.sub(p);
+      if (frame === 'local') { a.getWorldQuaternion(iq).invert(); tL.applyQuaternion(iq); dL.applyQuaternion(iq); }
+    }
+    const view = {
+      anchor, frame,
+      target: [r2(tL.x), r2(tL.y), r2(tL.z)],
+      azimuth: r2(THREE.MathUtils.radToDeg(Math.atan2(dL.x, dL.z)), 100),
+      elevation: r2(THREE.MathUtils.radToDeg(Math.asin(Math.min(1, Math.max(-1, dL.y)))), 100),
+      // a cutaway distance only survives if the view is still a close-up
+      distance: (src.distance ?? 100) < 20 && zoom >= 0.6 * (src.zoom ?? zoom) ? src.distance : 100,
+      zoom: r2(zoom),
+      follow,
+      label: src.label || src.name || '',
+    };
+    if (src.scene) view.scene = typeof src.scene === 'string' ? src.scene : src.id;
+    if (src.overlay) view.overlay = src.overlay;
+    if (src.sun) view.sun = src.sun;
+    if (src.durationScale) view.durationScale = src.durationScale;
+    if (src.effects) {               // e.g. window light for a window close-up; the hour + sky are saved separately
+      const { timezone, twHour, ...fx } = src.effects;
+      if (Object.keys(fx).length) view.effects = fx;
+    }
+    return view;
+  }
+
+  // Where a camera would be with these slider values, without moving it.
+  function resolve(spec, elevation, zoom, orbit, pan) {
+    desired(asSpec(spec), elevation, zoom, orbit, pan);
+    return { target: des.target.clone(), dir: des.dir.clone(), zoom: des.zoom };
+  }
 
   function update(nowSec, elevation, zoom, orbit, pan) {
     desired(preset, elevation, zoom, orbit, pan);
     if (trans) {
+      // Big turns (more than 90°) get more time and a rise in the middle,
+      // so the camera curves up over the scene instead of whipping round.
+      if (trans.turn === undefined) {
+        const a = azEl(trans.from.dir), b = azEl(des.dir);
+        const dAz = Math.abs(wrapPi(b.az - a.az));
+        const turn = Math.acos(Math.min(1, Math.max(-1, trans.from.dir.dot(des.dir))));
+        trans.turn = Math.max(turn, dAz * Math.cos((a.el + b.el) / 2));
+        const big = Math.min(1, Math.max(0, (trans.turn - Math.PI / 2) / (Math.PI / 2)));   // 0 at 90°, 1 at 180°
+        trans.dur *= 1 + 1.5 * big;                                   // up to 2.5× longer
+        trans.lift = big * 0.45;                                      // up to ~25° higher at the middle
+      }
       const t = Math.min(1, Math.max(0, (nowSec - trans.start) / trans.dur));
-      const e = ease(t);
+      const e = t;   // constant speed from start to end
       progress = e;
-      pose.target.lerpVectors(trans.from.target, des.target, e);
-      pose.dir.lerpVectors(trans.from.dir, des.dir, e);
-      if (pose.dir.lengthSq() < 1e-6) pose.dir.copy(des.dir);
-      pose.dir.normalize();
+      // Zoom changes by a constant factor per second; the slide across the
+      // world is paced against it so the picture pans at one steady speed on
+      // screen (a plain blend would whip in at the end when zooming in).
+      const r = des.zoom / trans.from.zoom;
+      const s = Math.abs(r - 1) < 1e-3 ? e : (1 - Math.pow(r, -e)) / (1 - 1 / r);
+      pose.target.lerpVectors(trans.from.target, des.target, s);
+      // orbit at a steady pace: around the vertical axis the short way, and
+      // up/down in step, plus the rise in the middle of a big turn. (A plain
+      // rotation between near-opposite views could tip over a random axis.)
+      {
+        const a = azEl(trans.from.dir), b = azEl(des.dir);
+        const az = a.az + wrapPi(b.az - a.az) * e;
+        const el = Math.min(d2r(80), a.el + (b.el - a.el) * e + trans.lift * Math.sin(Math.PI * e));
+        pose.dir.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+      }
       pose.dist = llerp(trans.from.dist, des.dist, e);
       pose.zoom = llerp(trans.from.zoom, des.zoom, e);
       if (t >= 1) trans = null;
@@ -66,7 +178,16 @@ export function createCameraRig(camera, anchors) {
       pose.dist = des.dist;
       pose.zoom = des.zoom;
     }
-    camera.position.copy(pose.target).addScaledVector(pose.dir, pose.dist);
+    // where to cut: far back for normal views; for close-ups, just in front of
+    // whatever is really in the way (checked every few frames)
+    let dist = FAR_BACK;
+    if (occluders && pose.dist < CUT_ON) {
+      if (cutFrame++ % 3 === 0) cutD = clearDistance(pose.target, pose.dir);
+      dist = cutD;
+    } else {
+      cutD = FAR_BACK; cutFrame = 0;
+    }
+    camera.position.copy(pose.target).addScaledVector(pose.dir, dist);
     camera.up.set(0, 1, 0);
     camera.lookAt(pose.target);
     camera.zoom = pose.zoom;
@@ -74,10 +195,11 @@ export function createCameraRig(camera, anchors) {
   }
 
   return {
-    go, jump, update, pose,
+    go, jump, update, pose, makeView, resolve,
     get preset() { return preset; },
     get frameQuat() { return q; },   // the preset's frame (identity unless frame: 'local')
     get transitioning() { return !!trans; },
+    get endTime() { return trans ? trans.start + trans.dur : 0; },   // when the current move lands
     get progress() { return progress; },
   };
 }

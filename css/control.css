@@ -291,6 +291,7 @@ kbd {
   background: var(--paper);
 }
 .now strong { font-weight: 500; font-size: 15px; }
+.now .row-buttons { grid-column: 1 / -1; }   /* prev / next sit right under the active song */
 
 /* song list */
 .songlist {
@@ -386,10 +387,123 @@ kbd {
 .saveview select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
 .songlist .saved-mark { color: var(--red); margin-right: 4px; }
 
-/* share live */
-.share-input {
-  flex: 1 1 220px; min-width: 0; font: 12px var(--mono); color: var(--ink); background: var(--paper);
-  border: var(--line); border-radius: 0; padding: 7px 8px;
-}
 #onlineStatus { flex: 1 1 auto; }
 #onlineStatus[data-ok="true"] { color: var(--green); }
+
+/* views.json status: red when saving isn't possible */
+#viewFile { font-family: var(--mono); font-size: 11px; }
+#viewFile[data-ok="false"] { color: var(--red); }
+
+/* camera buttons, grouped by place */
+.presets-cam { display: block; }
+.cam-group {
+  margin: 14px 0 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .08em;
+  color: var(--ink-soft);
+}
+.cam-group:first-child { margin-top: 0; }
+.cam-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.cam { justify-content: space-between; }
+.follow-mark { color: var(--red); font-size: 13px; }
+.cam[aria-pressed="true"] .follow-mark { color: var(--yellow); }
+
+/* sub-sections inside a card */
+.sub {
+  margin: 6px 0 -4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .08em;
+  color: var(--ink-soft);
+}
+.stages button { font-family: var(--mono); font-size: 11px; padding: 7px 4px; }
+.presets { grid-template-columns: repeat(3, 1fr); }
+.card .toggle + .toggle { margin-top: -6px; }
+
+/* ================================================================
+   One screen: everything fits a 14" laptop window without scrolling.
+   Long lists (songs, camera buttons) scroll inside their own box.
+   ================================================================ */
+body.onescreen { font-size: 13px; }
+/* tall enough: lock to the window, lists scroll inside their boxes.
+   Smaller windows fall back to a normal scrolling page. */
+@media (min-height: 700px) and (min-width: 1100px) {
+  body.onescreen { height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+}
+@media (max-height: 699px), (max-width: 1099px) {
+  .onescreen .songlist { max-height: 380px; }
+  .onescreen .presets-cam { max-height: 420px; }
+}
+@media (max-width: 1099px) {
+  .onescreen .layout { grid-template-columns: 1fr; }
+}
+.onescreen .top { padding: 12px 20px 8px; align-items: center; }
+.onescreen .eyebrow { margin-bottom: 2px; font-size: 10px; }
+.onescreen h1 { font-size: 22px; }
+.onescreen .top-right { display: flex; align-items: center; gap: 12px; }
+.onescreen .top-right .hint { font-size: 11px; }
+.onescreen .status { min-width: 0; padding: 7px 10px; grid-template-columns: auto auto; }
+.onescreen .top-right .btn { padding: 7px 14px; }
+.onescreen .sky { height: 6px; margin: 0 20px; border: 0; }
+
+.onescreen .layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 20px 14px;
+  align-items: stretch;
+}
+.onescreen .col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.onescreen .card { padding: 10px 12px 12px; gap: 9px; min-height: 0; }
+.onescreen h2 { padding-bottom: 7px; font-size: 10px; }
+.onescreen .field { gap: 2px; }
+.onescreen .row label { font-size: 13px; }
+.onescreen output { font-size: 11px; }
+.onescreen .hint { font-size: 11px; line-height: 1.35; }
+.onescreen .btn { padding: 7px 10px; }
+.onescreen input[type="range"] { height: 16px; }
+.onescreen .toggle { gap: 8px; }
+.onescreen .switch { width: 32px; height: 17px; }
+.onescreen .switch::after { width: 10px; height: 10px; }
+.onescreen .toggle input:checked + .switch::after { transform: translateX(15px); }
+.onescreen .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.onescreen .label { margin-bottom: -4px; }
+
+/* songs column: the list takes the free height */
+.onescreen #songs { display: flex; flex-direction: column; }
+.onescreen .now { padding: 7px 10px; grid-template-columns: 1.6fr 1fr; }
+.onescreen .now strong { font-size: 13px; }
+.onescreen .songlist { flex: 1; min-height: 120px; max-height: none; }
+.onescreen .songlist li { padding: 5px 9px; gap: 8px; grid-template-columns: 22px 1fr auto; }
+.onescreen .songlist .song { flex-direction: row; align-items: baseline; gap: 6px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; }
+.onescreen .songlist .song strong { font-size: 13px; }
+.onescreen .songlist .artist { font-size: 11px; }
+.onescreen .songlist li.active .num::before { content: none; }
+.onescreen .songlist .cam-tag { white-space: nowrap; }
+.onescreen .saveview { margin-top: 0; padding-top: 8px; border-top: var(--line); display: flex; flex-direction: column; gap: 6px; }
+.onescreen .saveview-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.onescreen #saveView { flex: 1; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* camera column: buttons scroll, sliders stay at the bottom */
+.onescreen #cameraCard { display: flex; flex-direction: column; }
+.onescreen .presets-cam { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.onescreen .cam-group { margin: 8px 0 4px; font-size: 10px; }
+.onescreen .cam-group:first-child { margin-top: 0; }
+.onescreen .cam-grid { gap: 4px; }
+.onescreen .cam { font-size: 12px; padding: 5px 8px; }
+.onescreen .cam-sliders { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: var(--line); }
+
+/* motion + atmosphere */
+.onescreen .stages { grid-auto-columns: 1fr; }
+.onescreen .stages button { padding: 6px 2px; font-size: 10.5px; }
+.onescreen .sub { margin: 2px 0 -4px; font-size: 10px; }
+.onescreen .presets { grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.onescreen .preset { height: 30px; }
+.onescreen .preset span { font-size: 9px; left: 4px; bottom: 2px; }
+.onescreen .segmented button { padding: 6px 4px; font-size: 12px; }
+.onescreen .now .label { margin-bottom: 2px; }

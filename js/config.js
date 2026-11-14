@@ -3,7 +3,6 @@
 
 export const CHANNEL_NAME = 'whnvr-liminal-landing';
 export const STORAGE_KEY = 'whnvr-liminal-landing/state-v2';
-export const VIEWS_KEY = 'whnvr-liminal-landing/song-views';   // camera views saved per song
 
 // All automatic motion is built from periodic functions whose frequencies are
 // whole multiples of this loop, so a recording of exactly LOOP_SECONDS loops
@@ -11,7 +10,7 @@ export const VIEWS_KEY = 'whnvr-liminal-landing/song-views';   // camera views s
 export const LOOP_SECONDS = 120;
 
 export const MAX_HOUSES = 12;   // per main island
-export const MAX_BIRDS = 16;
+export const MAX_BIRDS = 20;
 export const MAX_CLOUDS = 16;
 
 // World layout (same coordinate system the camera presets use).
@@ -77,6 +76,7 @@ export const ATMOSPHERES = [
   { id: 'twilight', colors: ['#24357f', '#c48bb8', '#f6b26b'] },
   { id: 'dawn', colors: ['#7fb3ea', '#f7d7c4', '#f3d98a'] },
   { id: 'henge', colors: ['#3a3f9e', '#ff8a5a', '#ffcf6b'] },
+  { id: 'midnight', colors: ['#010102', '#05060b', '#0d1020'] },   // deep black sky
 ];
 
 // Light at different hours. Each island's look is mixed from these by its
@@ -111,6 +111,7 @@ export const DEFAULT_STATE = Object.freeze({
 
   // camera
   cameraPreset: 'overview',
+  customView: null,      // a song's saved view (see presets.js); null = use cameraPreset
   cameraCue: 0,          // bumps every time a preset/scene is (re)activated
   zoom: 0.56,
   cameraAngle: 30,       // elevation (deg) for the current preset
@@ -137,7 +138,15 @@ export const DEFAULT_STATE = Object.freeze({
   timezone: 0.35,        // (unused now: New York is always 12 h from Taiwan)
   twHour: 7,             // Taiwan local time, 0-23 (New York = +12 h)
   darkness: 0.9,         // how dark night gets (1 = lights almost off)
-  split: 0,              // 0 = blended sky, 1 = sky split down the middle, day | night
+  split: 0,
+  rain: 0.6,             // rain over Taiwan, 0 = none
+  snow: 0.6,             // snow over New York, 0 = none
+  breatheOn: false,      // islands breathe (things on them rise and fall with it); off by default
+  rippleOn: false,       // the picture wavers like it's seen through water
+  contrast: 1,           // contrast + saturation of the final picture (0.6 softer – 1.6 punchier)
+  skyDim: 0,             // darkens only the sky behind the world (0 = as is, 0.9 = nearly black); lighting untouched  ripple: 0,             // water-ripple distortion over the whole picture
+  rainOn: true,          // weather switches
+  snowOn: true,              // 0 = blended sky, 1 = sky split down the middle, day | night
   windowLight: 0.7,
   clouds: 0.75,          // how many clouds
   cloudDensity: 0.5,
@@ -154,6 +163,32 @@ export const DEFAULT_STATE = Object.freeze({
   activeSong: -1,
 });
 
+// Settings that no longer have a control. They are locked to these values,
+// whatever a song, an old saved state or another browser asks for.
+export const FIXED = Object.freeze({
+  autoAnimate: true,      // always animating
+  rotationSpeed: 1,       // islands: one turn per 2-minute loop
+  tour: false,            // autonomous camera tour removed
+  showMain: true,         // island / bird / airplane switches removed
+  showSatellites: true,
+  birdsVisible: true,
+  airplane: true,
+  split: 0,               // split sky removed
+  clouds: 0.75,           // 12 of 16 clouds
+  cloudDensity: 0,
+  cloudOpacity: 0.5,
+  cloudSoftness: 1,
+  cloudDrift: 1.5,
+  houseCount: 12,         // houses per island
+  birdCount: 20,          // birds (the speed stays adjustable)
+  rain: 0.6,              // weather strength (the switches stay)
+  snow: 1,
+  grain: 0,               // grain removed
+  darkness: 0.85,         // how dark night gets
+  windowLight: 0.7,       // windows follow the hour now; this only sets screen brightness
+  halftone: 0.5,          // the halftone breathes on its own (viewer.js)
+});
+
 export function sanitize(s) {
   const out = { ...DEFAULT_STATE };
   if (s && typeof s === 'object') {
@@ -162,6 +197,7 @@ export function sanitize(s) {
     }
   }
   if (!STROKE_MODES.includes(out.stroke)) out.stroke = 'stroke';
+  Object.assign(out, FIXED);
   return out;
 }
 

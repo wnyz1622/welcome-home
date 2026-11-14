@@ -58,6 +58,8 @@ export function createFreecam(dom, camera, getTarget) {
     sph.theta += off.az;
     sph.phi = Math.min(Math.PI - 0.01, Math.max(0.01, sph.phi - off.el));
     v.setFromSpherical(sph);
+    // zoomed well out from a close cutaway: step back so nothing gets sliced
+    if (off.zoom < 0.6 && v.length() < 20) v.setLength(320);
     const t = target.clone().add(off.pan);
     camera.position.copy(t).add(v);
     camera.up.set(0, 1, 0);
