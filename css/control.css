@@ -578,3 +578,33 @@ body.onescreen { font-size: 13px; }
   .sky-colors { grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
   .sky-colors label span { display: none; }
 }
+
+/* ================================================================
+   Scrim card, and the right-hand layout with it (wide window):
+   Motion | Atmosphere on top, Scrim under Motion, Camera across the bottom.
+   ================================================================ */
+@media (min-width: 1100px) {
+  .onescreen .col-right {
+    grid-template-areas: "motion atmo" "scrim atmo" "camera camera";
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  .onescreen .col-right > section:nth-of-type(1) { grid-area: motion; }
+  .onescreen .col-right > section:nth-of-type(2) { grid-area: atmo; }
+  .onescreen .col-right #scrimCard { grid-area: scrim; }
+  .onescreen .col-right #cameraCard { grid-area: camera; }
+  .onescreen #scrimCard { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; align-content: start; }
+  .onescreen #scrimCard > h2, .onescreen #scrimCard > .hint { grid-column: 1 / -1; }
+}
+
+/* Narrow window: sliders sit two to a row (half width); everything else in
+   a card keeps the full width. */
+@media (max-width: 1099px) {
+  .onescreen .card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 14px; align-content: start; }
+  .onescreen .card > * { grid-column: 1 / -1; }
+  .onescreen .card > .field { grid-column: auto; }
+  .onescreen .card > .field:has(.sky-colors), .onescreen .card > .field:has(.row-buttons) { grid-column: 1 / -1; }
+  .onescreen .motion-cam { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .onescreen .motion-cam > .field:has(.row-buttons) { grid-column: 1 / -1; }
+  .onescreen .field .row { flex-wrap: wrap; gap: 0 6px; }
+  .onescreen .field output { white-space: nowrap; }
+}

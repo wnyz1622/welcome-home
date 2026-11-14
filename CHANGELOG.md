@@ -562,3 +562,41 @@ listed in the order they were requested, newest at the bottom.
   their rooms.
 - **`songs.txt`** lists every song's current view, camera (static / follow /
   orbit), time, sky and extras.
+
+## Round 24: Scrim panel, floating doors, auto time, calmer motion (2026-11-14)
+
+- **Scrim panel (new)**, for projecting through layered fabric. Show-wide,
+  not per song: **Halftone dots** switch (off by default; the dots moiré
+  against the fabric), **Bloom** (only bright parts glow, soft-capped so
+  nothing burns out), **Saturation** (separate from contrast), **Lift
+  shadows**, **Darken edges**, and **Fade distance** (things far behind the
+  subject melt into the sky, using real depth).
+- **Clouds switch** under Weather; the clouds fade out and back over ~2 s.
+- **Cloud shapes** are one smooth organic curve (soft blobs that melt
+  together, gently warped) instead of three circles stuck together.
+- **Auto time:** a switch under Time; the clock keeps running from the set
+  time at one hour every 10 minutes, with the light changing as it goes.
+  Minutes show in the readouts. Always starts off.
+- **Calmer motion:**
+  - Floating / Displacement changes are slower and near-linear (about
+    5.5 s float → separate, 12.5 s to scatter), with no rush mid-way.
+  - The sun and moon glide on soft springs (~2 s) instead of snapping
+    with the camera, and swap islands over ~7 s.
+- **浪流連: floating doors.** Nine bright doors in full four-sided frames
+  orbit the bridge, some above it and some below; some stand open, some
+  stay shut, some swing slowly. Flying houses keep clear.
+- **回家:** the bus stays parked at the stop instead of driving off and
+  shrinking away.
+- **我想和你一起:** the camera pans so the two birds fly on the left; each
+  bird has a soft glow.
+- **牽掛:** the spiral stair climbs about 3.5 turns (52 steps), open in the
+  middle.
+- **台北某個地方:** a park bench under the trees and a small flock circling
+  the island.
+- **勇氣:** auto orbit on, dream glass 100%, ripple on.
+- **Portal birds** are bright pastels instead of dark navy and rust.
+- **Flying houses:** about a third stay plain; the rest gain trim,
+  framed windows, door knobs and canopies, and sometimes a chimney or a
+  round gable window. Every house keeps its place and colors.
+- **Controller, narrow window:** sliders sit two to a row.
+

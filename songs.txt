@@ -1,4 +1,4 @@
-SONG VIEWS — current setup (from views.json + js/songs.js, updated 2026-11-14)
+SONG VIEWS — current setup (from views.json + js/songs.js, updated 2026-11-14, round 24)
 
 camera:  static = fixed spot, the world moves in front of it
          follow = rides along with a moving subject
@@ -8,6 +8,10 @@ sky:     preset name in the controller (Sky + time)
 Controls (Motion card): zoom, camera angle, orbit, Auto orbit (non-stop:
 one extra turn a minute, saved with the song) and Pan Left / Center /
 Right (glides a tenth of the screen per press, kept when you Save view).
+Auto time (under Time): the clock keeps running from the set time, one
+hour every 10 min; always starts off. Clouds switch under Weather.
+Scrim panel (show-wide, not per song): Halftone dots (off), Bloom 30%,
+Saturation 110%, Lift shadows 15%, Darken edges 30%, Fade distance 25%.
 
 -完美落地
 1. view: from the aircraft windows (cabin, three windows)
@@ -16,7 +20,7 @@ Right (glides a tenth of the screen per press, kept when you Save view).
 4. sky: harbor
 
 -回家
-1. view: bus stop island
+1. view: bus stop island; the bus stays parked at the stop (idling)
 2. camera: static
 3. time: 10:00 TW / 22:00 NY
 4. sky: dawn · sky dimmer 20%
@@ -34,7 +38,9 @@ Right (glides a tenth of the screen per press, kept when you Save view).
 4. sky: dusk · sky dimmer 70%
 
 -浪流連
-1. view: the floating bridge into its window
+1. view: the floating bridge into its window, with a ring of colorful
+   floating doors orbiting it (some above the bridge, some below; just
+   door + full four-sided frame; some open, some shut, some swinging)
 2. camera: follow (the bridge window)
 3. time: 09:00 TW / 21:00 NY
 4. sky: twilight
@@ -94,7 +100,8 @@ Right (glides a tenth of the screen per press, kept when you Save view).
 4. sky: late · sky dimmer 45% · float 2.2
 
 -我想和你一起
-1. view: two birds flying side by side
+1. view: two birds flying side by side, on the left of the frame, each
+   with a soft cream glow
 2. camera: follow (the bird pair, from behind)
 3. time: 08:00 TW / 20:00 NY
 4. sky: dawn · float 3.6
@@ -151,7 +158,8 @@ Right (glides a tenth of the screen per press, kept when you Save view).
 4. sky: between
 
 -牽掛
-1. view: the spiral staircase island
+1. view: the spiral staircase, now about 3.5 turns / 3.5 stories tall
+   (52 steps, sky blue to pale pink, open middle, no pole)
 2. camera: orbit (round the stairs) + auto orbit on
 3. time: 19:00 TW / 07:00 NY
 4. sky: lawn
@@ -170,7 +178,8 @@ Right (glides a tenth of the screen per press, kept when you Save view).
 4. sky: dusk · snow on
 
 -台北某個地方
-1. view: grove island close-up, laundry hanging out
+1. view: grove island close-up, laundry hanging out, a park bench under
+   the trees, and a small flock of birds circling the island
 2. camera: static
 3. time: 07:00 TW / 19:00 NY
 4. sky: lawn
@@ -215,6 +224,7 @@ Right (glides a tenth of the screen per press, kept when you Save view).
 
 -勇氣
 1. view: the standing window
-2. camera: static
+2. camera: static + auto orbit on
 3. time: 11:00 TW / 23:00 NY
-4. sky: lawn · float 3.6 (scattered)
+4. sky: lawn · float 3.6 (scattered) · dream glass 100% · ripple on
+

@@ -115,6 +115,7 @@
         <div class="field">
           <div class="row"><label for="twHour">Time</label><output data-for="twHour"></output></div>
           <input type="range" id="twHour" data-key="twHour" min="0" max="23" step="1">
+          <label class="toggle"><input type="checkbox" data-key="autoTime"><span class="switch" aria-hidden="true"></span><span>Auto time (keeps running, 1 h / 10 min)</span></label>
         </div>
         <div class="field">
           <div class="row"><label>Sky colors</label><output id="skyHex"></output></div>
@@ -128,6 +129,7 @@
         <div class="toggles">
           <label class="toggle"><input type="checkbox" data-key="rainOn"><span class="switch" aria-hidden="true"></span><span>Rain on Taiwan</span></label>
           <label class="toggle"><input type="checkbox" data-key="snowOn"><span class="switch" aria-hidden="true"></span><span>Snow on New York</span></label>
+          <label class="toggle"><input type="checkbox" data-key="cloudsOn"><span class="switch" aria-hidden="true"></span><span>Clouds</span></label>
         </div>
         <h3 class="sub">Look</h3>
         <div class="segmented" id="strokeButtons">
@@ -146,6 +148,35 @@
         <div class="field">
           <div class="row"><label for="dream">Dream glass</label><output data-for="dream"></output></div>
           <input type="range" id="dream" data-key="dream" min="0" max="1" step="0.01">
+        </div>
+      </section>
+
+      <!-- ===================== scrim ===================== -->
+      <section class="card" id="scrimCard">
+        <h2>Scrim</h2>
+        <p class="hint">For projecting through layered fabric. Show-wide: these stay the same across songs.</p>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" data-key="halftoneOn"><span class="switch" aria-hidden="true"></span><span>Halftone dots</span></label>
+        </div>
+        <div class="field">
+          <div class="row"><label for="bloom">Bloom</label><output data-for="bloom"></output></div>
+          <input type="range" id="bloom" data-key="bloom" min="0" max="1" step="0.01">
+        </div>
+        <div class="field">
+          <div class="row"><label for="saturation">Saturation</label><output data-for="saturation"></output></div>
+          <input type="range" id="saturation" data-key="saturation" data-snap="1" min="0.5" max="1.8" step="0.01">
+        </div>
+        <div class="field">
+          <div class="row"><label for="shadowLift">Lift shadows</label><output data-for="shadowLift"></output></div>
+          <input type="range" id="shadowLift" data-key="shadowLift" min="0" max="0.6" step="0.01">
+        </div>
+        <div class="field">
+          <div class="row"><label for="edgeDark">Darken edges</label><output data-for="edgeDark"></output></div>
+          <input type="range" id="edgeDark" data-key="edgeDark" min="0" max="1" step="0.01">
+        </div>
+        <div class="field">
+          <div class="row"><label for="distFade">Fade distance</label><output data-for="distFade"></output></div>
+          <input type="range" id="distFade" data-key="distFade" min="0" max="1" step="0.01">
         </div>
       </section>
 

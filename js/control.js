@@ -10,8 +10,14 @@ import { SONG_SCENES } from './songs.js';
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const pad = (n) => String(n).padStart(2, '0');
+// a fractional hour as HH:MM (auto time runs through the minutes)
+const hhmm = (h) => {
+  const m = Math.floor((((h % 24) + 24) % 24) * 60 + 1e-6);
+  return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+};
 
 let state = loadState();
+state.autoTime = false;   // auto time always starts off; switch it on during the show
 let selectedSong = state.activeSong >= 0 ? state.activeSong : 0;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel(CHANNEL_NAME) : null;
 
@@ -22,10 +28,15 @@ const fmt = {
   contrast: v => v === 1 ? 'as drawn' : `${v > 1 ? '+' : '−'}${Math.round(Math.abs(v - 1) * 100)}%`,
   skyDim: v => v === 0 ? 'off' : `−${Math.round(v * 100)}%`,  zoom: v => `${v.toFixed(2)}×`,
   dream: v => v === 0 ? 'off' : `${Math.round(v * 100)}%`,
+  bloom: v => v === 0 ? 'off' : `${Math.round(v * 100)}%`,
+  saturation: v => `${Math.round(v * 100)}%`,
+  shadowLift: v => v === 0 ? 'off' : `${Math.round(v * 100)}%`,
+  edgeDark: v => v === 0 ? 'off' : `${Math.round(v * 100)}%`,
+  distFade: v => v === 0 ? 'off' : `${Math.round(v * 100)}%`,
   cameraAngle: v => `${v.toFixed(1)}°`,
   cameraOrbit: v => `${v > 0 ? '+' : ''}${Math.round(v)}°`,
   transition: v => `${v.toFixed(1)} s`,
-  twHour: v => `${pad(Math.round(v) % 24)}:00 Taiwan · ${pad((Math.round(v) + 12) % 24)}:00 New York`,
+  twHour: v => `${hhmm(v)} Taiwan · ${hhmm(v + 12)} New York`,
 };
 
 // ------------------------------------------------------------- broadcast
@@ -328,8 +339,8 @@ function render() {
   $('#skyHex').textContent = skyList.join(' · ');
   const pn = Math.round(state.panScreen * 100);
   $('#panOut').textContent = pn === 0 ? 'centered' : `${pn > 0 ? 'right' : 'left'} ${Math.abs(pn)}%`;
-  const hr = Math.round(state.twHour) % 24;
-  $('#activeTime').textContent = `${pad(hr)}:00 TW · ${pad((hr + 12) % 24)}:00 NY`;
+  $('#activeTime').textContent = `${hhmm(state.twHour)} TW · ${hhmm(state.twHour + 12)} NY`
+    + (state.autoTime ? ' ▸' : '');
   for (const b of $$('.preset')) {
     const p = ATMOSPHERES.find(x => x.id === b.dataset.id);
     b.setAttribute('aria-pressed', String(p.colors[0] === state.bgTop && p.colors[1] === state.bgMid && p.colors[2] === state.bgBottom));
@@ -344,7 +355,7 @@ function render() {
     const cam = songCamera(SONG_SCENES[i]);
     const hr = typeof cam.saved?.time === 'number' ? cam.saved.time : SONG_SCENES[i].time;
     li.querySelector('.cam-tag').innerHTML = (cam.saved ? '<span class="saved-mark" title="saved in views.json">●</span>' : '')
-      + cameraLabel(cam) + (typeof hr === 'number' ? ` · ${pad(hr)}:00` : '');
+      + cameraLabel(cam) + (typeof hr === 'number' ? ` · ${hhmm(hr)}` : '');
   }
   const sel = SONG_SCENES[selectedSong];
   $('#saveView').textContent = `Save view → ${pad(selectedSong + 1)} ${sel.title}`;
@@ -529,6 +540,25 @@ setInterval(() => {
     statusText.textContent = 'viewer not open';
   }
 }, 800);
+
+// Auto time: the clock keeps running from wherever it's set — a set time,
+// a song's time, a drag of the slider — at one hour every 10 min, steadily.
+// Small steps four times a second; the viewer glides between them.
+const AUTO_TIME_RATE = 1 / 600;  // hours per second: one hour every 10 minutes
+{
+  let lastTick = performance.now();
+  setInterval(() => {
+    const nowMs = performance.now();
+    const dt = Math.min(2, (nowMs - lastTick) / 1000);
+    lastTick = nowMs;
+    if (!state.autoTime) return;
+    state.twHour = (state.twHour + dt * AUTO_TIME_RATE) % 24;
+    for (const out of $$('output[data-for="twHour"]')) out.textContent = fmt.twHour(state.twHour);
+    $('#twHour').value = state.twHour;
+    $('#activeTime').textContent = `${hhmm(state.twHour)} TW · ${hhmm(state.twHour + 12)} NY ▸`;
+    push();
+  }, 250);
+}
 
 // Narrow window (performing): one column, and the Active song with Prev /
 // Activate / Next moves into a dock that sticks to the top of the window.

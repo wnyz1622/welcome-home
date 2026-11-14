@@ -5,7 +5,7 @@
 // displacement intensity rises: 'window', 'bars', 'roof', 'part'.
 
 import * as THREE from 'three';
-import { C } from './config.js';
+import { C, rand } from './config.js';
 import { toon, mesh, faceted, addWindow, SHAPE, LIGHTS, beamMaterial, billboardMaterial, dreamyBoardMaterial, shared } from './materials.js';
 
 const TAU = Math.PI * 2;
@@ -632,15 +632,19 @@ export function scooter(color = C.roofRed) {
 
 // A spiral staircase going nowhere: chunky steps curving up and round,
 // deep blue at the bottom fading to white and pink at the top.
-export function spiralStairs(n = 15) {
+// 牽掛: a spiral stair that keeps climbing — about three and a half turns,
+// some three stories up, winding round an open middle, the steps fading from sky
+// blue at the bottom to pale pink at the top and narrowing a little as they go.
+export function spiralStairs(n = 52) {
   const g = new THREE.Group();
   const bottom = new THREE.Color('#5ab4e8'), top = new THREE.Color('#f6d9da');
+  const sh = 0.2, step = 0.44;                       // rise and turn per step
   for (let k = 0; k < n; k++) {
     const f = k / (n - 1);
-    const sh = 0.2, len = 1.05 - f * 0.25, dep = 0.42 - f * 0.08;
+    const len = 1.05 - f * 0.3, dep = 0.42 - f * 0.1;
     const col = '#' + bottom.clone().lerp(top, f).getHexString();
     const s = mesh(box(len, sh, dep), toon(col, { colorB: '#3b62c4', grad: [-sh / 2, sh / 2] }));
-    const a = k * 0.44;
+    const a = k * step;
     const rr = 0.42 + len / 2;
     s.position.set(Math.cos(a) * rr, sh / 2 + k * sh, Math.sin(a) * rr);
     s.rotation.y = -a;
@@ -1279,11 +1283,90 @@ export function flyingHouse(r) {
     g.add(mesh(faceted(geo), toon(roofC)));
   }
 
+  // Details come from their own seed (made from this house's size), so adding
+  // them doesn't move or recolor any house. About a third stay plain — just
+  // body and roof; the rest get trim, windows, a door with a little canopy,
+  // and sometimes a chimney or a round window in the gable.
+  const q = rand(Math.floor(w * 7919 + h * 104729 + d * 1299709) % 2147483647);
+  const plain = q.chance(0.33);
   const dw = Math.min(0.3, w * 0.26), dh = h * r.f(0.45, 0.6);
-  for (const s of [1, -1]) {
+  const doorX = [r.f(-0.25, 0.25) * w, r.f(-0.25, 0.25) * w];   // (always drawn, so the sequence never changes)
+  if (plain) return g;
+
+  const ink = toon(C.ink);
+  const pane = toon('#f7f1e2');
+  const trimC = toon(new THREE.Color(wall).multiplyScalar(0.8).getStyle());
+  // a slim base band and an eave line under the roof
+  const base = mesh(box(w + 0.04, 0.06, d + 0.04), trimC, { edges: false });
+  base.position.y = -h / 2 + 0.03;
+  const eave = mesh(box(w + 0.03, 0.035, d + 0.03), trimC, { edges: false });
+  eave.position.y = top - 0.02;
+  g.add(base, eave);
+  // doors, each with a small canopy (sometimes)
+  [1, -1].forEach((s, k) => {
     const door = mesh(box(dw, dh, 0.03), toon(doorC), { edges: false });
-    door.position.set(r.f(-0.25, 0.25) * w, -h / 2 + dh / 2, s * (d / 2 + 0.012));
+    door.position.set(doorX[k], -h / 2 + dh / 2, s * (d / 2 + 0.012));
     g.add(door);
+    const knob = mesh(new THREE.SphereGeometry(0.018, 6, 4), ink, { edges: false });
+    knob.position.set(doorX[k] + dw * 0.3, -h / 2 + dh * 0.48, s * (d / 2 + 0.035));
+    g.add(knob);
+    if (q.chance(0.55)) {
+      const can = mesh(box(dw + 0.1, 0.03, 0.1), toon(roofC), { edges: false });
+      can.position.set(doorX[k], -h / 2 + dh + 0.04, s * (d / 2 + 0.05));
+      g.add(can);
+    }
+  });
+  // a window: a cream pane with a thin cross, in a slim frame
+  const windowAt = (x, y, z, ry, ww, wh) => {
+    const wg = new THREE.Group();
+    const frame = mesh(box(ww + 0.04, wh + 0.04, 0.02), trimC, { edges: false });
+    const glass = mesh(box(ww, wh, 0.025), pane, { edges: false });
+    const mv = mesh(box(0.012, wh, 0.03), ink, { edges: false });
+    const mh = mesh(box(ww, 0.012, 0.03), ink, { edges: false });
+    const sill = mesh(box(ww + 0.08, 0.02, 0.05), trimC, { edges: false });
+    sill.position.set(0, -wh / 2 - 0.03, 0.02);
+    wg.add(frame, glass, mv, mh, sill);
+    wg.position.set(x, y, z);
+    wg.rotation.y = ry;
+    g.add(wg);
+  };
+  const ws = Math.min(0.2, w * 0.18), wy = h * 0.12;
+  [1, -1].forEach((s, k) => {
+    // one or two windows beside the door, on the front and back faces
+    const free = -Math.sign(doorX[k] || 1);
+    const n = w > 1.2 && q.chance(0.6) ? 2 : 1;
+    for (let i = 0; i < n; i++) {
+      const x = free * (w * 0.28 + i * (ws + 0.12)) * (n === 2 ? 0.8 : 1);
+      if (Math.abs(x) + ws / 2 > w / 2 - 0.05) continue;
+      windowAt(x, wy, s * (d / 2 + 0.016), s > 0 ? 0 : Math.PI, ws, ws * 1.15);
+    }
+  });
+  // a side window, on one side
+  const side = q.chance(0.5) ? 1 : -1;
+  windowAt(side * (w / 2 + 0.016), wy, 0, side * Math.PI / 2, Math.min(0.2, d * 0.24), Math.min(0.2, d * 0.24) * 1.15);
+  if (kind === 'gable' || kind === 'tall') {
+    // a round window up in the gable, now and then
+    if (q.chance(0.4)) {
+      for (const s of [1, -1]) {
+        const ring = mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.02, 16), trimC, { edges: false });
+        ring.rotation.x = Math.PI / 2;
+        const gl = mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.03, 16), pane, { edges: false });
+        gl.rotation.x = Math.PI / 2;
+        const holder = new THREE.Group();
+        holder.add(ring, gl);
+        holder.position.set(0, top + 0.17, s * (d / 2 + 0.045));
+        g.add(holder);
+      }
+    }
+    // a chimney poking through the roof, sometimes
+    if (q.chance(0.5)) {
+      const cx = (q.chance(0.5) ? 1 : -1) * w * 0.22;
+      const ch = mesh(box(0.12, 0.34, 0.12), toon(new THREE.Color(roofC).multiplyScalar(0.75).getStyle()));
+      ch.position.set(cx, top + 0.24, d * q.f(-0.15, 0.15));
+      const cap = mesh(box(0.16, 0.035, 0.16), ink, { edges: false });
+      cap.position.set(cx, top + 0.42, ch.position.z);
+      g.add(ch, cap);
+    }
   }
   return g;
 }
@@ -1827,20 +1910,19 @@ const smooth = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 *
 
 // Two buses per loop: one pulls in, waits, leaves. The board's three lights
 // count it in, blink while it waits, go dark when it leaves.
+// 回家: the bus waits at the stop the whole time — parked, full size, its
+// engine idling (a faint rock). The stop's signal still counts the bus in
+// and blinks while it waits, then starts again.
 export function animateBusStop(a, ph) {
   const u = (ph * 2) % 1;
-  let x, lit = 0, blink = false;
-  if (u < 0.22) { const e = u / 0.22; x = -3 + 3.2 * (1 - (1 - e) * (1 - e)); lit = 1 + Math.floor(e * 2.99); }
-  else if (u < 0.55) { x = 0.2; blink = true; }
-  else if (u < 0.75) { const e = (u - 0.55) / 0.2; x = 0.2 + 2.8 * e * e; }
-  else { x = -3; lit = (u - 0.75) / 0.25 > 0.5 ? 1 : 0; }
-  a.bus.position.x = x;
-  const s = smooth((3 - Math.abs(x)) / 0.7);
-  a.bus.scale.setScalar(1.8 * Math.max(0.0001, s));
-  a.bus.visible = s > 0.01;
-  // a little dip as it brakes and pulls away
-  const dip = u > 0.2 && u < 0.26 ? Math.sin((u - 0.2) / 0.06 * Math.PI) : 0;
-  a.bus.rotation.z = dip * 0.04;
+  let lit = 0, blink = false;
+  if (u < 0.22) lit = 1 + Math.floor((u / 0.22) * 2.99);
+  else if (u < 0.75) blink = true;
+  else lit = (u - 0.75) / 0.25 > 0.5 ? 1 : 0;
+  a.bus.position.x = 0.2;
+  a.bus.scale.setScalar(1.8);
+  a.bus.visible = true;
+  a.bus.rotation.z = Math.sin(TAU * ph * 40) * 0.004;   // idling
   const on = blink ? (Math.sin(TAU * ph * 24) > 0 ? 3 : 0) : lit;
   a.dots.forEach((d, i) => d.material.color.copy(i < on ? a.on : a.off));
 }
@@ -2577,6 +2659,43 @@ export function animateSteam(steam, ph) {
 }
 
 // 台北某個地方: two laundry poles, a string, clothes blowing in the wind.
+// A park bench: three wooden slats for the seat, two for the back, on dark
+// cast-iron side frames with curled armrests. Faces +z.
+export function parkBench() {
+  const g = new THREE.Group();
+  const wood = toon('#c98f62');
+  const iron = toon('#2a2f45');
+  const L = 0.9, seatY = 0.36;
+  for (let i = 0; i < 3; i++) {                       // seat slats
+    const s = mesh(box(L, 0.035, 0.07), wood);
+    s.position.set(0, seatY, 0.1 - i * 0.085);
+    g.add(s);
+  }
+  for (let i = 0; i < 2; i++) {                       // back slats, leaning back a little
+    const s = mesh(box(L, 0.07, 0.03), wood);
+    s.position.set(0, seatY + 0.16 + i * 0.12, -0.16 - i * 0.02);
+    s.rotation.x = -0.18;
+    g.add(s);
+  }
+  for (const sx of [-1, 1]) {                         // side frames
+    const x = sx * (L / 2 - 0.05);
+    const legF = mesh(box(0.04, seatY, 0.04), iron, { edges: false });
+    legF.position.set(x, seatY / 2, 0.12);
+    const legB = mesh(box(0.04, seatY + 0.42, 0.04), iron, { edges: false });
+    legB.position.set(x, (seatY + 0.42) / 2, -0.17);
+    legB.rotation.x = -0.12;
+    const rail = mesh(box(0.04, 0.03, 0.32), iron, { edges: false });
+    rail.position.set(x, seatY - 0.03, -0.02);
+    const arm = mesh(box(0.05, 0.035, 0.3), iron, { edges: false });
+    arm.position.set(x, seatY + 0.2, -0.01);
+    const curl = mesh(new THREE.TorusGeometry(0.045, 0.012, 6, 12, Math.PI * 1.5), iron, { edges: false });
+    curl.rotation.y = Math.PI / 2;
+    curl.position.set(x, seatY + 0.16, 0.14);
+    g.add(legF, legB, rail, arm, curl);
+  }
+  return g;
+}
+
 export function laundryLine(r, span = 2.8) {
   const g = new THREE.Group();
   const H = 1.5;

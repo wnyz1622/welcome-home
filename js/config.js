@@ -138,7 +138,8 @@ export const DEFAULT_STATE = Object.freeze({
   bgMid: '#2f8ec2',
   bgBottom: '#86cf9e',
   timezone: 0.35,        // (unused now: New York is always 12 h from Taiwan)
-  twHour: 7,             // Taiwan local time, 0-23 (New York = +12 h)
+  twHour: 7,             // Taiwan local time, 0-24 with minutes (New York = +12 h)
+  autoTime: false,       // the clock keeps running from the set time (one hour every 10 min)
   darkness: 0.9,         // how dark night gets (1 = lights almost off)
   split: 0,
   rain: 0.6,             // rain over Taiwan, 0 = none
@@ -148,7 +149,15 @@ export const DEFAULT_STATE = Object.freeze({
   contrast: 1,           // contrast + saturation of the final picture (0.6 softer – 1.6 punchier)
   skyDim: 0,             // darkens only the sky behind the world (0 = as is, 0.9 = nearly black); lighting untouched  ripple: 0,             // water-ripple distortion over the whole picture
   dream: 0.35,           // dream glass: soft blur + glow, like looking through a fogged window
+  // Scrim panel: for projecting through layered fabric (show-wide, not per song)
+  halftoneOn: false,     // the halftone dots in the sky (off: they moiré against the fabric)
+  bloom: 0.3,            // bright parts glow outward, soft-capped (never burns out)
+  saturation: 1.1,       // color strength, separate from contrast
+  shadowLift: 0.15,      // lifts the darkest tones a little so dark shapes don't vanish
+  edgeDark: 0.3,         // darkens toward the frame's edges
+  distFade: 0.25,        // fades distant things into the sky; the subject stays vivid
   rainOn: true,          // weather switches
+  cloudsOn: true,        // the clouds (fade out over ~2 s when switched off)
   snowOn: true,              // 0 = blended sky, 1 = sky split down the middle, day | night
   windowLight: 0.7,
   clouds: 0.75,          // how many clouds

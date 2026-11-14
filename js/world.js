@@ -14,7 +14,7 @@ import {
   streetLamp, spiralStairs, portal,
   miniBus, animateBusStop, animateLuggage, lookoutRoom, bathroomRoom, ringRoad,
   bigApple, windmill, departuresBoard,
-  schoolFish, bigClock, fireflies, diningRoom, animateSteam, laundryLine, animateLaundry, steadyGlow,
+  schoolFish, bigClock, fireflies, diningRoom, animateSteam, laundryLine, animateLaundry, steadyGlow, parkBench,
 } from './architecture.js';
 import { makeBird } from './birds.js';
 import { LIGHTS, toon, mesh, faceted } from './materials.js';
@@ -285,6 +285,58 @@ export function createWorld() {
   world.add(bridgeRoot);
   anchors.bridgeWindow = bridgeAnchor;
   let bridgeLit = 0, bridgeTurn = 0, bridgeYaw = 0;
+
+  // ---- floating doors over the bridge: a ring of colorful doors orbiting
+  // slowly in the sky, some above the bridge and some below it. Just the
+  // door and its frame, in bright flat colors; an open door just shows the
+  // sky through its frame. Some stand open, some stay shut, some slowly swing open and closed.
+  // Clear of New York, the spiral stairs and the turning bridge.
+  const doorCenter = new V3(-27, 4.5, 17);
+  const DOOR_RING = 5.5;                        // outer reach of the ring (for flying houses)
+  const floatDoors = [];
+  {
+    const LEAVES = ['#4a7bff', '#ff5a47', '#ffc93d', '#4fd0f5', '#ffb3c6', '#6fd14a', '#c9a6ff', '#ff8a5c', '#3d6bff'];
+    const LOW = new Set([1, 3, 6, 8]);                // these float below the bridge
+    const KINDS = ['open', 'closed', 'swing', 'open', 'swing', 'closed', 'open', 'swing', 'open'];
+    const dr = rand(7731);
+    const W = 0.95, H = 1.9, T = 0.09;
+    KINDS.forEach((kind, i) => {
+      const g = new THREE.Group();
+      const navy = toon(i % 4 === 3 ? '#f2e8d2' : '#2a2a5c');
+      // the frame: a full four-sided frame — two jambs, a lintel and a sill
+      for (const sx of [-1, 1]) {
+        const jamb = mesh(new THREE.BoxGeometry(T, H + T * 2, T), navy);
+        jamb.position.set(sx * (W / 2 + T / 2), 0, 0);
+        g.add(jamb);
+      }
+      for (const sy of [-1, 1]) {
+        const bar = mesh(new THREE.BoxGeometry(W, T, T), navy);
+        bar.position.set(0, sy * (H / 2 + T / 2), 0);
+        g.add(bar);
+      }
+      // the leaf, hinged on its left edge, with a knob
+      const pivot = new THREE.Group();
+      pivot.position.set(-W / 2, 0, 0.0);
+      const leafCol = LEAVES[i % LEAVES.length];
+      // flat, self-lit color, so the doors stay bright at any hour
+      const leaf = mesh(new THREE.BoxGeometry(W, H, 0.06), new THREE.MeshBasicMaterial({ color: leafCol }));
+      leaf.position.set(W / 2, 0, 0.03);
+      const knob = mesh(new THREE.SphereGeometry(0.05, 8, 6), toon('#2a2a5c'), { edges: false });
+      knob.position.set(W - 0.12, -0.05, 0.09);
+      pivot.add(leaf, knob);
+      g.add(pivot);
+      g.scale.setScalar(dr.f(0.8, 1.25));
+      world.add(g);
+      floatDoors.push({
+        g, pivot, kind,
+        an0: i / KINDS.length + dr.f(-0.03, 0.03),       // evenly round the ring
+        // above the bridge (y 3..7), or below it (y about -7..-5.5)
+        r: dr.f(3.2, 5.0), h: LOW.has(i) ? dr.f(-11.5, -10) : dr.f(-1.5, 2.5),
+        face: dr.f(-0.9, 0.9),                            // how it turns relative to the ring
+        k: dr.i(2, 4), ph: dr.next(),
+      });
+    });
+  }
 
   // ---- New York: yellow cabs. Two loops (an inner and an outer lane) around
   // the avenues and the outermost cross streets; they drive, stop, drive.
@@ -872,7 +924,14 @@ export function createWorld() {
   world.add(pairAnchor);
   anchors.birdPair = pairAnchor;
   const pair = [makeBird('pigeon'), makeBird('pigeon')];
-  pair.forEach(b => { b.g.scale.setScalar(3.2); world.add(b.g); });
+  pair.forEach(b => {
+    b.g.scale.setScalar(3.2);
+    // a soft pale halo, so the pair reads against any sky
+    const halo = steadyGlow(1.9, '#fff1d0', 0.6);
+    halo.position.set(0, 0, 0.02);
+    b.g.add(halo);
+    world.add(b.g);
+  });
   const pairPos = (ph, out) => {
     const th = TAU * ph;
     const A = 31, B = 25;                               // lobes reach past each island's ends
@@ -904,8 +963,11 @@ export function createWorld() {
 
   const portalBirds = [];
   const pbr = rand(6061);
+  // bright, light colors (no dark navy or rust), matching the portals' glow
+  const PORTAL_BIRD_COLORS = ['#7fd3ff', '#ff9ec7', '#ffe066', '#8ff0c4', '#c9a6ff', '#ffab8f', '#fffaf0', '#9fe6ff'];
   for (let i = 0; i < 24; i++) {
     const b = makeBird(i % 2 ? 'sparrow' : 'pigeon');
+    b.L.material.color.set(PORTAL_BIRD_COLORS[i % PORTAL_BIRD_COLORS.length]);   // (both wings share it)
     world.add(b.g);
     const rr = () => pbr.f(-1, 1) * PORTAL.R * 0.55;
     portalBirds.push({
@@ -984,6 +1046,34 @@ export function createWorld() {
   const laundry = laundryLine(rand(4404));
   laundry.group.position.set(0.2, 0, 1.75);
   anchors.grove.add(laundry.group);
+  // ...a park bench in the clear spot between the trees, facing out
+  {
+    const bench = parkBench();
+    const bx = -1.2, bz = -1.5;
+    bench.position.set(bx, 0, bz);
+    bench.rotation.y = Math.atan2(bx, bz);             // its front (+z) faces away from the middle
+    bench.scale.setScalar(1.1);
+    anchors.grove.add(bench);
+  }
+  // ...and a little flock circling the island, low and close, just outside
+  // the trees, the laundry and the bench, so they stay in the song's frame
+  const groveBirds = [];
+  {
+    const gr = rand(4405);
+    for (let i = 0; i < 9; i++) {
+      const b = makeBird(i % 3 ? 'sparrow' : 'pigeon');
+      b.g.scale.setScalar(gr.f(1.0, 1.35));
+      const halo = steadyGlow(1.2, '#fff1d0', 0.35);   // a faint halo so they read on the fabric
+      b.g.add(halo);
+      world.add(b.g);
+      groveBirds.push({
+        ...b, r: gr.f(2.6, 3.8), h: gr.f(0.5, 1.6),
+        an0: i / 9 + gr.f(-0.03, 0.03),
+        k: i % 4 === 3 ? -4 : 5,                        // laps per loop (most one way, a few the other)
+        bob: gr.f(0.12, 0.3), ph: gr.next(), flap: gr.f(70, 110),
+      });
+    }
+  }
 
   // Love Lee: a point that follows the apple and turns against its spin,
   // so a camera bound to it orbits the apple
@@ -1189,6 +1279,17 @@ export function createWorld() {
           sh.base.x = r.x + ux * need; sh.base.z = r.z + uz * need;
         }
       }
+    }
+  }
+  // ...and clear of the ring of floating doors over the bridge
+  for (const sh of ships) {
+    const reach = Math.max(sh.amp.x, sh.amp.z) + sh.sc * 1.2;
+    if (Math.abs(sh.base.y - (doorCenter.y - 4.5)) > 9 + sh.amp.y + sh.sc) continue;   // covers both tiers (y -8..8)
+    const dx = sh.base.x - doorCenter.x, dz = sh.base.z - doorCenter.z, d = Math.hypot(dx, dz);
+    const need = DOOR_RING + 1.2 + reach;
+    if (d < need) {
+      const ux = d > 1e-3 ? dx / d : 1, uz = d > 1e-3 ? dz / d : 0;
+      sh.base.x = doorCenter.x + ux * need; sh.base.z = doorCenter.z + uz * need;
     }
   }
   // ...and clear of the phone booth and the paper planes round it (未接來電)
@@ -1475,6 +1576,27 @@ export function createWorld() {
       bridgeYaw *= Math.exp(-dt * 1.2);
     }
     bridgeSpin.rotation.y = bridgeYaw;
+    // the floating doors: one slow orbit per loop, a gentle bob and sway;
+    // open doors breathe a little, shut ones crack open now and then,
+    // swinging ones open and close slowly. Their light follows how open they are.
+    for (const d of floatDoors) {
+      d.g.visible = showSatellites;
+      const an = TAU * (ph + d.an0);
+      d.g.position.set(
+        doorCenter.x + Math.cos(an) * d.r,
+        doorCenter.y + d.h + Math.sin(TAU * (ph * 2 + d.ph)) * 0.35,
+        doorCenter.z + Math.sin(an) * d.r);
+      d.g.rotation.set(
+        Math.sin(TAU * (ph * 2 + d.ph)) * 0.06,
+        -an + Math.PI / 2 + d.face + Math.sin(TAU * (ph + d.ph)) * 0.25,
+        Math.sin(TAU * (ph * 3 + d.ph * 2)) * 0.05);
+      const w = 0.5 - 0.5 * Math.cos(TAU * (ph * d.k + d.ph));   // 0..1, smooth
+      let open;
+      if (d.kind === 'open') open = 1.0 + 0.25 * w;                             // ajar, breathing
+      else if (d.kind === 'closed') open = 0.12 * Math.pow(w, 4);               // now and then, a crack
+      else open = 1.25 * w * w * (3 - 2 * w);                                   // slowly open, slowly shut
+      d.pivot.rotation.y = -open;
+    }
     // out of New York's way while turned (and until it is home again)
     const away = Math.max(bridgeTurn, Math.min(1, Math.abs(bridgeYaw) / 0.3));
     // a slow bob and sway
@@ -1516,6 +1638,17 @@ export function createWorld() {
     dining.group.visible = presetId === 'dining';
     if (dining.group.visible) animateSteam(dining.steam, ph);
     animateLaundry(laundry.items, ph);
+    // the grove's birds, circling the island wherever it floats
+    for (const b of groveBirds) {
+      const c = anchors.grove.position;
+      const an = TAU * (ph * b.k + b.an0);
+      const dir = Math.sign(b.k);
+      b.g.visible = showSatellites;
+      b.g.position.set(c.x + Math.cos(an) * b.r, c.y + b.h + Math.sin(TAU * (ph * 6 + b.ph)) * b.bob, c.z + Math.sin(an) * b.r);
+      b.g.rotation.set(0, Math.atan2(-Math.sin(an) * dir, Math.cos(an) * dir), 0.25 * dir, 'YXZ');
+      const flap = 0.15 + Math.sin(TAU * (ph * b.flap + b.ph)) * 0.6;
+      b.L.rotation.z = flap; b.R.rotation.z = -flap;
+    }
     appleOrbit.position.copy(apple.position);
     appleOrbit.rotation.set(0, -TAU * ph, 0);
     // the phone booth bobs gently; its paper planes circle it

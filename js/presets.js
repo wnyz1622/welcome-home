@@ -175,7 +175,7 @@ export const CAMERA_PRESETS = [
   {
     id: 'stairsOrbit', name: 'Spiral Stairs (orbit)',
     group: 'sky', follow: true,
-    anchor: 'stairsOrbit', frame: 'local', target: [0, 1.6, 0], azimuth: 110, elevation: 10, distance: 100, zoom: 3.8,   // circles the stairs once per loop
+    anchor: 'stairsOrbit', frame: 'local', target: [0, 5.4, 0], azimuth: 110, elevation: 10, distance: 100, zoom: 2.1,   // circles the stairs once per loop
     durationScale: 1.4,
   },
   {

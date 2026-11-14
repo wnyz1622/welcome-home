@@ -82,7 +82,9 @@ function clipAll() {
     if (Array.isArray(o.material)) o.material.forEach(addClip); else addClip(o.material);
   });
 }
-const rt = new THREE.WebGLRenderTarget(4, 4, { samples: 4 });
+// the scene pass keeps its depth too (the orthographic depth is linear), so
+// the post pass can fade far-off things into the sky (Scrim: Fade distance)
+const rt = new THREE.WebGLRenderTarget(4, 4, { samples: 4, depthTexture: new THREE.DepthTexture(4, 4) });
 
 shared.uAtlas.value = makeMemoryAtlas();
 loadMemoryImages(shared.uAtlas.value);
@@ -90,6 +92,7 @@ const world = createWorld();
 const weather = createWeather(world);
 
 let rainOn = 1, snowOn = 1;
+let cloudsVis = 1;     // eased 0..1: the clouds switch fades them in and out
 scene.add(world.group);
 const clouds = createClouds();
 scene.add(clouds.group);
@@ -130,6 +133,14 @@ const post = new THREE.ShaderMaterial({
     uPunch: { value: 1 },                       // contrast + saturation together (1 = as drawn)
     uSkyDim: { value: 0 },                      // darkens the sky only, never the world's light
     uDream: { value: 0 },                       // dream glass: blur + glow, a fogged window
+    // Scrim panel: tuned for projecting through layered fabric
+    tDepth: { value: rt.depthTexture },
+    uBloom: { value: 0 },                       // glow bleeding off the bright parts, soft-capped
+    uSat: { value: 1 },                         // saturation, on its own
+    uLift: { value: 0 },                        // lifts the darkest tones a little
+    uEdge: { value: 0 },                        // darkens toward the frame's edges
+    uFade: { value: 0 },                        // fades distant things into the sky
+    uSubject: { value: 320 },                   // how far the camera's subject is (depth units)
     uNightA: shared.uNightA,
     uNightB: shared.uNightB,
     uWashK: { value: new THREE.Vector2() },     // how much each side's hour colors the sky
@@ -151,6 +162,8 @@ const post = new THREE.ShaderMaterial({
     uniform vec3 uTop, uMid, uBot;
     uniform float uTime, uLoop, uGrain, uFrame, uHalftone;
     uniform float uRipple, uPunch, uSkyDim, uDream;
+    uniform sampler2D tDepth;
+    uniform float uBloom, uSat, uLift, uEdge, uFade, uSubject;
     uniform float uTz, uGlowR, uAir, uBlack, uNightA, uNightB, uSplit, uLeftA, uSunRA;
     uniform vec2 uWashK, uSunUvA, uSunUvB, uMoonUvA, uMoonUvB, uSunAmt, uMoonAmt;
     uniform vec2 uGlowA, uGlowB;
@@ -342,6 +355,13 @@ const post = new THREE.ShaderMaterial({
       }
 
       vec3 ground = sky(uv) * (1.0 - uSkyDim);   // sky dimmer: background only
+      // fade distance: things well behind the subject melt into the sky, so
+      // the subject stays vivid and the rest goes quiet
+      if (uFade > 0.001 && s.a > 0.001) {
+        float dz = mix(${camera.near.toFixed(3)}, ${camera.far.toFixed(1)}, texture2D(tDepth, uv).r);
+        float far = smoothstep(uSubject + 6.0, uSubject + 60.0, dz);
+        s.rgb = mix(s.rgb, ground * s.a, far * uFade * 0.85);
+      }
       vec3 col = ground * (1.0 - s.a) + s.rgb;   // scene is premultiplied
       // ...and the world's light bleeds softly onto the dark sky around it
       if (uSkyDim > 0.01) {
@@ -399,6 +419,29 @@ const post = new THREE.ShaderMaterial({
         // a whisper of milkiness, like condensation catching the light
         col = mix(col, col * 0.92 + 0.08 * colH, 0.5 * uDream);
       }
+      // bloom: only the bright parts of the world (lit windows, lamps, signs,
+      // screens) glow outward, wide and soft. Added with a screen blend and a
+      // soft cap, so it never burns anything out to flat white.
+      if (uBloom > 0.001) {
+        vec2 bpx = (14.0 * uRes.y / 1080.0) / uRes;
+        float brot = hash(gl_FragCoord.xy + 7.0) * TAU;
+        vec3 bl = vec3(0.0);
+        float bsum = 0.0;
+        for (int i = 0; i < 20; i++) {
+          float fi = float(i) + 0.5;
+          float r = sqrt(fi / 20.0);
+          float an = fi * 2.39996323 + brot;
+          vec4 t = texture2D(tScene, uv + vec2(cos(an), sin(an)) * r * bpx);
+          vec3 tc = t.a > 0.001 ? t.rgb / t.a : vec3(0.0);
+          float tl = dot(tc, vec3(0.299, 0.587, 0.114));
+          float w = exp(-r * r * 1.8);
+          bl += tc * t.a * smoothstep(0.55, 0.95, tl) * w;
+          bsum += w;
+        }
+        bl = bl / bsum * uBloom * 0.9;
+        bl = bl / (1.0 + bl);                              // soft cap
+        col = 1.0 - (1.0 - col) * (1.0 - bl);
+      }
       if (uAir > 0.001) col = mix(col, airplaneWindow(col, vUv), uAir);
 
       float n1 = hash(fc) - 0.5;
@@ -414,9 +457,19 @@ const post = new THREE.ShaderMaterial({
       float lum = dot(col, vec3(0.299, 0.587, 0.114));
       col = mix(vec3(lum), col, uPunch);
       col = (col - 0.5) * uPunch + 0.5;
+      // saturation, on its own
+      float lum2 = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(vec3(lum2), col, uSat);
+      // shadow lift: the darkest tones come up a little (keeping their hue),
+      // so dark shapes don't vanish on fabric; mid and bright tones untouched
+      float sh = pow(1.0 - clamp(lum2, 0.0, 1.0), 3.0);
+      col += (col * 0.6 + 0.07) * sh * uLift;
 
+      // edges darken softly (a small amount always, more with Darken edges)
       vec2 vc = vUv - 0.5;
       col *= 1.0 - dot(vc, vc) * 0.16;
+      float er = length(vc * vec2(1.0, 1.15)) * 1.6;
+      col *= 1.0 - smoothstep(0.35, 1.05, er) * uEdge * 0.85;
       col *= 1.0 - uBlack;
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
     }`,
@@ -480,6 +533,7 @@ const EASED = [
   'cameraPanX', 'cameraPanY', 'cameraPanZ',
   'windowLight', 'clouds', 'cloudDensity', 'cloudOpacity', 'cloudDrift', 'cloudSoftness',
   'halftone', 'grain', 'timezone', 'darkness', 'split', 'rain', 'snow', 'dream',
+  'bloom', 'saturation', 'shadowLift', 'edgeDark', 'distFade',
 ];
 // what the camera is following: a song's saved view, or else a preset
 const specOf = (st) => (isView(st.customView) ? st.customView : presetById(st.cameraPreset));
@@ -525,12 +579,18 @@ let blackStart = -1;   // when the fade from black began (song 1)
 let lastCue = target.cameraCue;
 let easeBoostUntil = 0;
 let strokeMode = null;
+let halftoneAmt = target.halftoneOn ? 1 : 0;   // eased: the halftone dots fade in / out
 let breath = target.breatheOn ? 1 : 0;   // eased slowly, so breathing starts and stops gently
 let ripple = target.rippleOn ? 1 : 0;     // the ripple switch fades over ~3 s
 // Floating / Displacement moves at a steady pace with a soft start and stop,
 // so going from float to scatter visibly breaks apart (about 2 s per step of 1)
 const floatAnim = { from: target.floatIntensity, to: target.floatIntensity, start: 0, dur: 0 };
 let sunSide = null;                        // eased 0..1: which island has the sun
+// the sun and moon on screen: where each wants to be, and where it is (springs)
+const sunGoal = new THREE.Vector2(), moonGoal = new THREE.Vector2();
+const sunPos = new THREE.Vector2(), moonPos = new THREE.Vector2();
+const sunVel = new THREE.Vector2(), moonVel = new THREE.Vector2();
+let skyBodiesReady = false;
 
 world.setLayout(target.layoutSeed, performance.now() / 1000, true);
 rig.jump(specOf(target));
@@ -743,11 +803,18 @@ function drawFrame(now) {
     floatAnim.from = cur.floatIntensity;
     floatAnim.to = target.floatIntensity;
     floatAnim.start = nowSec;
-    floatAnim.dur = Math.max(1.5, Math.abs(floatAnim.to - floatAnim.from) * 2);
+    // slow and steady: ~5.5 s float → separate, ~12 s all the way to scatter
+    floatAnim.dur = Math.max(3, 2.5 + Math.abs(floatAnim.to - floatAnim.from) * 2.5);
   }
   {
     const u = floatAnim.dur > 0 ? Math.min(1, (nowSec - floatAnim.start) / floatAnim.dur) : 1;
-    const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+    // constant speed through the middle, with short soft ramps at each end
+    // (no rush in the middle, so pieces drift apart evenly instead of leaping)
+    const R = 0.18;                                   // fraction of the time spent ramping, each end
+    const vmax = 1 / (1 - R);
+    const e = u < R ? 0.5 * vmax * u * u / R
+      : u > 1 - R ? 1 - 0.5 * vmax * (1 - u) * (1 - u) / R
+      : 0.5 * vmax * R + vmax * (u - R);
     cur.floatIntensity = floatAnim.from + (floatAnim.to - floatAnim.from) * e;
   }
   for (const key of EASED) {
@@ -894,9 +961,12 @@ function drawFrame(now) {
     if (u >= 1) blackStart = -1;
   }
 
+  cloudsVis += ((target.cloudsOn ? 1 : 0) - cloudsVis) * (1 - Math.exp(-dt * 1.2));
+  if (Math.abs((target.cloudsOn ? 1 : 0) - cloudsVis) < 1e-3) cloudsVis = target.cloudsOn ? 1 : 0;
+  clouds.group.visible = cloudsVis > 0.001;
   clouds.update({
     phase: cloudPhase, ph, camera, camTarget: rig.pose.target,
-    amount: cur.clouds, density: cur.cloudDensity, opacity: cur.cloudOpacity, softness: cur.cloudSoftness,
+    amount: cur.clouds, density: cur.cloudDensity, opacity: cur.cloudOpacity * cloudsVis, softness: cur.cloudSoftness,
     tz: 1, cloudA: tzCur.A.cloud, cloudB: tzCur.B.cloud,
     nightA: shared.uNightA.value, nightB: shared.uNightB.value,
   });
@@ -917,19 +987,34 @@ function drawFrame(now) {
   const U = post.uniforms;
   const xA = clampX(posA.x, leftA), xB = clampX(posB.x, !leftA);
   // which island has the sun. However fast the Time slider moves, they trade
-  // places at a steady pace (about 4 s), and pass one above the other.
+  // places at a steady pace (about 7 s), and pass one above the other.
   const sTarget = LA.e > LB.e ? 1 : 0;                  // 1 = New York has the sun
   if (sunSide === null) sunSide = sTarget;
-  sunSide += Math.max(-dt / 4, Math.min(dt / 4, sTarget - sunSide));
-  const sA = sunSide * sunSide * (3 - 2 * sunSide);
+  sunSide += Math.max(-dt / 7, Math.min(dt / 7, sTarget - sunSide));
+  const sA = sunSide * sunSide * sunSide * (sunSide * (sunSide * 6 - 15) + 10);
   const sunX = THREE.MathUtils.lerp(xB, xA, sA), moonX = THREE.MathUtils.lerp(xA, xB, sA);
   let sunY = 0.6 + 0.22 * Math.min(1, Math.max(0, Math.max(LA.e, LB.e)));
   let moonY = 0.86;
   // keep apart vertically, never by jumping sideways: the sun dips, the moon lifts
   const near = Math.max(Math.sin(Math.PI * sA) * 0.12, Math.max(0, 0.2 - Math.abs(sunX - moonX)) * 0.6);
   sunY -= near; moonY = Math.min(0.94, moonY + near * 0.4);
-  U.uSunUvA.value.set(sunX, sunY).lerp(pinSun, henge);
-  U.uMoonUvA.value.set(moonX, moonY);
+  // Where they want to be follows the camera and the islands, which can move
+  // quickly (a song change swings the whole view). The sun and moon never
+  // jump there: each glides on a soft spring (~2 s), easing out of rest and
+  // settling without overshoot, so they drift across the sky like real ones.
+  sunGoal.set(sunX, sunY).lerp(pinSun, henge);
+  moonGoal.set(moonX, moonY);
+  if (!skyBodiesReady) { sunPos.copy(sunGoal); moonPos.copy(moonGoal); skyBodiesReady = true; }
+  {
+    const w = 1.7, h = Math.min(dt, 0.05);
+    for (const [P, V, G] of [[sunPos, sunVel, sunGoal], [moonPos, moonVel, moonGoal]]) {
+      V.x += ((G.x - P.x) * w * w - 2 * w * V.x) * h;
+      V.y += ((G.y - P.y) * w * w - 2 * w * V.y) * h;
+      P.x += V.x * h; P.y += V.y * h;
+    }
+  }
+  U.uSunUvA.value.copy(sunPos);
+  U.uMoonUvA.value.copy(moonPos);
   U.uSunRA.value = THREE.MathUtils.lerp(0.05, pinR, henge);
   U.uSunAmt.value.set(1 - air, 0);
   U.uMoonAmt.value.set((1 - henge) * (1 - air), 0);
@@ -943,7 +1028,9 @@ function drawFrame(now) {
   post.uniforms.uBot.value.copy(cur.bgBottom);
   post.uniforms.uGrain.value = cur.grain;
   // the halftone breathes on its own: 30%–70%, three breaths per loop
-  post.uniforms.uHalftone.value = 0.5 + 0.2 * Math.sin(TAU * ph * 3);
+  // (only when Halftone dots is on in the Scrim panel; it fades in and out)
+  halftoneAmt += ((target.halftoneOn ? 1 : 0) - halftoneAmt) * (1 - Math.exp(-dt * 1.5));
+  post.uniforms.uHalftone.value = (0.5 + 0.2 * Math.sin(TAU * ph * 3)) * halftoneAmt;
   post.uniforms.uFrame.value = frame;
   post.uniforms.uAir.value = air;
   post.uniforms.uBlack.value = black;
@@ -951,6 +1038,12 @@ function drawFrame(now) {
   post.uniforms.uPunch.value = cur.contrast;
   post.uniforms.uSkyDim.value = cur.skyDim;
   post.uniforms.uDream.value = cur.dream;
+  post.uniforms.uBloom.value = cur.bloom;
+  post.uniforms.uSat.value = cur.saturation;
+  post.uniforms.uLift.value = cur.shadowLift;
+  post.uniforms.uEdge.value = cur.edgeDark;
+  post.uniforms.uFade.value = cur.distFade;
+  post.uniforms.uSubject.value = camera.position.distanceTo(rig.pose.target);
 
   // street lamps glow with the night on their side of the world
   for (const h of LAMP_HALOS) {

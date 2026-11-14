@@ -36,20 +36,23 @@
   },
   "Lucky|Jason Mraz, Colbie Caillat": {
     "settings": {
+      "autoOrbit": false,
       "birdSpeed": 2,
       "breatheOn": false,
       "contrast": 1.1,
+      "dream": 1,
       "floatIntensity": 0.8,
       "rainOn": false,
       "rippleOn": true,
+      "skyDim": 0,
       "snowOn": false
     },
     "sky": [
-      "#7fb3ea",
-      "#f7d7c4",
-      "#f3d98a"
+      "#1d56d6",
+      "#b69ae4",
+      "#ff4b3a"
     ],
-    "time": 11,
+    "time": 11.032920166666662,
     "ver": 1,
     "view": {
       "anchor": "world",
@@ -65,7 +68,7 @@
         14.16,
         14.53
       ],
-      "zoom": 1.904
+      "zoom": 2.297
     }
   },
   "San Francisco Street|Sun Rai": {
@@ -104,12 +107,15 @@
   },
   "Soft Spot|keshi": {
     "settings": {
+      "autoOrbit": false,
       "birdSpeed": 2,
       "breatheOn": false,
       "contrast": 1,
+      "dream": 1,
       "floatIntensity": 0.8,
       "rainOn": false,
       "rippleOn": true,
+      "skyDim": 0,
       "snowOn": false
     },
     "sky": [
@@ -127,13 +133,13 @@
       "follow": false,
       "frame": "world",
       "label": "World Overview",
-      "name": "Wide · both islands",
+      "name": "Standing Window · wide",
       "target": [
         -0.418,
         5.03,
         -3.615
       ],
-      "zoom": 0.636
+      "zoom": 0.925
     }
   },
   "一桌菜|Cosmos People": {
@@ -211,36 +217,39 @@
   },
   "勇氣|Zhang Zhen Yue": {
     "settings": {
+      "autoOrbit": true,
       "birdSpeed": 2,
       "breatheOn": false,
       "contrast": 1,
+      "dream": 1,
       "floatIntensity": 3.6,
       "rainOn": false,
-      "rippleOn": false,
+      "rippleOn": true,
+      "skyDim": 0,
       "snowOn": false
     },
     "sky": [
-      "#5aa6e6",
-      "#efe6d4",
-      "#79c25a"
+      "#010102",
+      "#05060b",
+      "#0d1020"
     ],
-    "time": 11,
+    "time": 11.252586833333329,
     "ver": 1,
     "view": {
       "anchor": "world",
-      "azimuth": -144.1,
+      "azimuth": -98.51,
       "distance": 100,
-      "elevation": -15.4,
+      "elevation": -5.66,
       "follow": false,
       "frame": "world",
       "label": "Standing Window",
-      "name": "Two Birds",
+      "name": "New York",
       "target": [
-        1.86,
-        3.416,
-        -2.32
+        -1.591,
+        6.547,
+        -0.564
       ],
-      "zoom": 1.078
+      "zoom": 1.623
     }
   },
   "台北某個地方|Cheer Chen": {
@@ -389,36 +398,39 @@
   },
   "大人中|Crowd Lu": {
     "settings": {
+      "autoOrbit": false,
       "birdSpeed": 2,
       "breatheOn": false,
       "contrast": 1,
+      "dream": 0,
       "floatIntensity": 1,
       "rainOn": false,
       "rippleOn": false,
+      "skyDim": 0,
       "snowOn": false
     },
     "sky": [
-      "#5aa6e6",
-      "#efe6d4",
-      "#79c25a"
+      "#1858cf",
+      "#2f8ec2",
+      "#86cf9e"
     ],
-    "time": 23,
+    "time": 0,
     "ver": 1,
     "view": {
       "anchor": "world",
-      "azimuth": 25,
+      "azimuth": 68.27,
       "distance": 100,
-      "elevation": 20,
+      "elevation": -12.94,
       "follow": false,
       "frame": "world",
       "label": "Baggage Belt",
-      "name": "Baggage Belt",
+      "name": "Tiny House",
       "target": [
-        0.5,
-        -9.034,
-        0.5
+        -5.08,
+        11.564,
+        -3.356
       ],
-      "zoom": 1.8
+      "zoom": 4.596
     }
   },
   "完美落地|Luantan Ascent, Fran": {
@@ -600,12 +612,15 @@
   },
   "愛我別走|Zhang Zhen Yue": {
     "settings": {
+      "autoOrbit": false,
       "birdSpeed": 1,
       "breatheOn": false,
       "contrast": 1.1,
+      "dream": 0,
       "floatIntensity": 1,
       "rainOn": false,
       "rippleOn": false,
+      "skyDim": 0,
       "snowOn": false
     },
     "sky": [
@@ -617,19 +632,19 @@
     "ver": 1,
     "view": {
       "anchor": "world",
-      "azimuth": -60.5,
+      "azimuth": -78.55,
       "distance": 100,
-      "elevation": 7.9,
+      "elevation": 7.61,
       "follow": false,
       "frame": "world",
       "label": "Baggage Belt",
       "name": "Baggage Belt",
       "target": [
-        8.4,
-        -10.63,
-        -6.36
+        10.211,
+        -11.024,
+        -0.967
       ],
-      "zoom": 4.017
+      "zoom": 4.845
     }
   },
   "我在紐約打電話給你|Waa Wei": {
@@ -695,7 +710,7 @@
       "label": "Two Birds",
       "name": "Two Birds",
       "target": [
-        3.672,
+        -4.3,
         -1.357,
         5.219
       ],
@@ -724,27 +739,28 @@
     "ver": 1,
     "view": {
       "anchor": "ladderOrbit",
-      "azimuth": 110.62,
+      "azimuth": -71.83,
       "distance": 100,
       "durationScale": 1.4,
       "effects": {
         "windowLight": 1
       },
-      "elevation": 24.41,
+      "elevation": 12.09,
       "follow": true,
       "frame": "local",
       "label": "Ladder & Window (orbit)",
-      "name": "Taiwan · close-up",
+      "name": "Standing Window · close-up",
       "target": [
-        -2.811,
-        6.169,
-        1.628
+        -1.745,
+        8.276,
+        2.309
       ],
       "zoom": 6.774
     }
   },
   "抱著你|Zhang Zhen Yue": {
     "settings": {
+      "autoOrbit": false,
       "birdSpeed": 1,
       "breatheOn": false,
       "contrast": 1,
@@ -764,12 +780,12 @@
     "ver": 1,
     "view": {
       "anchor": "world",
-      "azimuth": 97.42,
+      "azimuth": 97.99,
       "distance": 100,
       "effects": {
         "windowLight": 1
       },
-      "elevation": -0.61,
+      "elevation": 2.54,
       "follow": false,
       "frame": "world",
       "label": "Taiwan",
@@ -854,9 +870,11 @@
   },
   "未接來電|Naiwen Yang": {
     "settings": {
+      "autoOrbit": true,
       "birdSpeed": 2,
       "breatheOn": false,
       "contrast": 1.09,
+      "dream": 0,
       "floatIntensity": 0,
       "rainOn": false,
       "rippleOn": false,
@@ -872,26 +890,28 @@
     "ver": 1,
     "view": {
       "anchor": "booth",
-      "azimuth": -80.41,
+      "azimuth": -54.69,
       "distance": 100,
-      "elevation": 6,
+      "elevation": 1.99,
       "follow": true,
       "frame": "world",
       "label": "Phone Booth",
-      "name": "Phone Booth",
+      "name": "Taiwan · close-up",
       "target": [
-        0,
-        1.4,
-        0
+        0.823,
+        1.464,
+        1.157
       ],
-      "zoom": 4.2
+      "zoom": 6.111
     }
   },
   "浪流連|EggPlantEgg": {
     "settings": {
+      "autoOrbit": false,
       "birdSpeed": 2,
       "breatheOn": false,
       "contrast": 1,
+      "dream": 0,
       "floatIntensity": 1,
       "rainOn": false,
       "rippleOn": false,
@@ -903,27 +923,27 @@
       "#c48bb8",
       "#f6b26b"
     ],
-    "time": 9,
+    "time": 9.336585500000016,
     "ver": 1,
     "view": {
       "anchor": "bridgeWindow",
-      "azimuth": 47.9,
+      "azimuth": 107.4,
       "distance": 14,
       "durationScale": 1.4,
       "effects": {
         "windowLight": 1
       },
-      "elevation": 24.54,
+      "elevation": -5.53,
       "follow": true,
       "frame": "local",
       "label": "Bridge Window",
       "name": "Bridge",
       "target": [
-        1.204,
-        -0.105,
-        -1.015
+        2.953,
+        -1.335,
+        1.383
       ],
-      "zoom": 2.802
+      "zoom": 3.38
     }
   },
   "浴室|deca joins": {
@@ -963,9 +983,11 @@
   },
   "無眠|sodagreen": {
     "settings": {
+      "autoOrbit": false,
       "birdSpeed": 1,
       "breatheOn": false,
       "contrast": 1,
+      "dream": 0,
       "floatIntensity": 0,
       "rainOn": false,
       "rippleOn": false,
@@ -981,23 +1003,23 @@
     "ver": 1,
     "view": {
       "anchor": "nyWindow",
-      "azimuth": -12,
+      "azimuth": -10.57,
       "distance": 6,
       "durationScale": 1.6,
       "effects": {
         "windowLight": 1
       },
-      "elevation": 5.04,
+      "elevation": -0.4,
       "follow": true,
       "frame": "local",
       "label": "New York Window",
-      "name": "New York · close-up",
+      "name": "New York",
       "target": [
-        0.419,
-        -0.15,
-        0.5
+        0.277,
+        1.585,
+        0.433
       ],
-      "zoom": 6.673
+      "zoom": 4.586
     }
   },
   "牽掛|Wu Bai": {
@@ -1034,11 +1056,11 @@
       "label": "Spiral Stairs (orbit)",
       "name": "Spiral Stairs",
       "target": [
-        1.989,
-        1.217,
-        1.66
+        0,
+        5.4,
+        0
       ],
-      "zoom": 3.8
+      "zoom": 2.1
     }
   },
   "紐約鄰居|Gordon": {
@@ -1112,12 +1134,15 @@
   },
   "超大行李|G.U.T.S": {
     "settings": {
+      "autoOrbit": false,
       "birdSpeed": 2,
       "breatheOn": false,
       "contrast": 1,
+      "dream": 0,
       "floatIntensity": 1,
       "rainOn": false,
       "rippleOn": true,
+      "skyDim": 0,
       "snowOn": false
     },
     "sky": [
@@ -1125,23 +1150,23 @@
       "#c48bb8",
       "#f6b26b"
     ],
-    "time": 0,
+    "time": 0.062176500000013055,
     "ver": 1,
     "view": {
       "anchor": "world",
-      "azimuth": -2.95,
+      "azimuth": -1.52,
       "distance": 100,
-      "elevation": 2.04,
+      "elevation": 13.5,
       "follow": false,
       "frame": "world",
       "label": "Baggage Belt",
       "name": "Baggage Belt",
       "target": [
-        0.706,
-        -9.798,
-        -19.034
+        2.751,
+        -13.915,
+        -17.754
       ],
-      "zoom": 2.981
+      "zoom": 3.596
     }
   },
   "魚|Cheer Chen": {

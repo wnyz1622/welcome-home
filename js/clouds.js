@@ -30,28 +30,52 @@ function valueNoise(seed) {
   };
 }
 
+// A cloud's shape: many soft blobs of different sizes that MELT together
+// (they're summed, like metaballs, not stacked), so the outline is one
+// flowing curve with no circles or creases showing. The whole field is
+// gently warped by slow noise, so the edge drifts organically, and the
+// bottom is flattened the way real cumulus sit on a level base.
 function cloudField(seed, W = 256, H = 128) {
   const n = valueNoise(seed);
+  const n2 = valueNoise(seed * 3 + 11);
   const r = mulberry32(seed * 7 + 1);
   const ox = r() * 50, oy = r() * 50;
-  // a few lumps along the top edge give each cloud its own silhouette
-  const lumps = Array.from({ length: 3 + Math.floor(r() * 3) }, () => ({
-    x: 0.2 + r() * 0.6, y: 0.38 + r() * 0.12, rx: 0.12 + r() * 0.16, ry: 0.14 + r() * 0.12,
-  }));
+  const blobs = [];
+  // a long, low body
+  for (let i = 0; i < 4; i++) {
+    blobs.push({ x: 0.2 + 0.6 * (i + r() * 0.6) / 4, y: 0.6 + r() * 0.05, rx: 0.16 + r() * 0.08, ry: 0.12 + r() * 0.04, w: 0.8 + r() * 0.3 });
+  }
+  // billows rising off the top, biggest near the middle
+  const tops = 3 + Math.floor(r() * 3);
+  for (let i = 0; i < tops; i++) {
+    const x = 0.24 + 0.52 * (i + 0.2 + r() * 0.6) / tops;
+    const mid = 1 - Math.abs(x - 0.5) * 1.6;
+    blobs.push({ x, y: 0.5 - 0.12 * mid - r() * 0.05, rx: 0.08 + 0.08 * mid + r() * 0.04, ry: 0.09 + 0.07 * mid + r() * 0.03, w: 0.75 + r() * 0.35 });
+  }
+  // a couple of small wisps trailing off the ends
+  for (const sx of [-1, 1]) {
+    blobs.push({ x: 0.5 + sx * (0.36 + r() * 0.06), y: 0.6 + r() * 0.04, rx: 0.07 + r() * 0.04, ry: 0.05 + r() * 0.02, w: 0.5 + r() * 0.3 });
+  }
   const data = new Uint8Array(W * H * 4);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      const u = x / W, v = y / H;               // v = 0 is the top of the texture
-      // base: flattened ellipse, softer at the top than the bottom
-      const dx = (u - 0.5) / 0.46, dy = (v - 0.58) / (v < 0.58 ? 0.36 : 0.22);
-      let shape = Math.max(0, 1 - (dx * dx + dy * dy));
-      for (const l of lumps) {
-        const lx = (u - l.x) / l.rx, ly = (v - l.y) / l.ry;
-        shape = Math.max(shape, Math.max(0, 1 - (lx * lx + ly * ly)) * 0.9);
+      let u = x / W, v = y / H;                 // v = 0 is the top of the texture
+      // slow warp: the outline drifts in and out in long, soft waves
+      u += (n2(ox + u * 3.0, oy + v * 2.0) - 0.5) * 0.06;
+      v += (n2(oy + u * 2.5 + 7.3, ox + v * 3.0) - 0.5) * 0.06;
+      // sum of gaussian blobs: they merge smoothly where they overlap
+      let d = 0;
+      for (const b of blobs) {
+        const bx = (u - b.x) / b.rx, by = (v - b.y) / b.ry;
+        d += b.w * Math.exp(-(bx * bx + by * by));
       }
-      let f = 0, amp = 0.5, fr = 3;
-      for (let o = 0; o < 5; o++) { f += amp * n(ox + u * fr * 2, oy + v * fr); amp *= 0.5; fr *= 2.1; }
-      const val = Math.max(0, Math.min(1, shape * (0.55 + f * 0.9)));
+      // a level base: the bottom fades a little faster than the top
+      const base = 1 - Math.min(1, Math.max(0, (v - 0.68) / 0.12));
+      let shape = (1 - Math.exp(-d * 1.6)) * (0.35 + 0.65 * base * base * (3 - 2 * base));
+      // soft texture inside, from low octaves only, so the edge stays smooth
+      let f = 0, amp = 0.5, fr = 2.2;
+      for (let o = 0; o < 4; o++) { f += amp * n(ox + u * fr * 2, oy + v * fr); amp *= 0.5; fr *= 2.0; }
+      const val = Math.max(0, Math.min(1, shape * (0.78 + (f - 0.5) * 0.35)));
       const i = ((H - 1 - y) * W + x) * 4;   // row 0 of a DataTexture is the bottom
       data[i] = data[i + 1] = data[i + 2] = Math.round(val * 255);
       data[i + 3] = 255;
