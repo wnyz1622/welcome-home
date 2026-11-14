@@ -116,6 +116,8 @@ export const DEFAULT_STATE = Object.freeze({
   zoom: 0.56,
   cameraAngle: 30,       // elevation (deg) for the current preset
   cameraOrbit: 0,        // extra azimuth (deg) on top of the preset
+  autoOrbit: false,      // the camera keeps circling on its own (one turn a minute)
+  panScreen: 0,          // camera pan left (−) / right (+), in screen widths
   cameraPanX: 0,         // shift of the look-at point, in the preset's frame
   cameraPanY: 0,
   cameraPanZ: 0,
@@ -145,6 +147,7 @@ export const DEFAULT_STATE = Object.freeze({
   rippleOn: false,       // the picture wavers like it's seen through water
   contrast: 1,           // contrast + saturation of the final picture (0.6 softer – 1.6 punchier)
   skyDim: 0,             // darkens only the sky behind the world (0 = as is, 0.9 = nearly black); lighting untouched  ripple: 0,             // water-ripple distortion over the whole picture
+  dream: 0.35,           // dream glass: soft blur + glow, like looking through a fogged window
   rainOn: true,          // weather switches
   snowOn: true,              // 0 = blended sky, 1 = sky split down the middle, day | night
   windowLight: 0.7,

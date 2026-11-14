@@ -1680,6 +1680,58 @@ export function suspensionBridge(r, len) {
     }
     g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(hang), cableMat));
   }
+  // necklace lights strung along the cables and rails, plus a soft wash on
+  // the deck. Off until a song turns them on (setLights, from world.js).
+  // Three sets that pulse a little out of step, so the string shimmers.
+  const lights = new THREE.Group();
+  const bulbGeo = new THREE.SphereGeometry(0.065, 8, 6);
+  const bulbMats = [0, 1, 2].map(() => new THREE.MeshBasicMaterial({ color: '#ffe9b8', transparent: true, opacity: 0, depthWrite: false }));
+  const haloMats = [0, 1, 2].map(() => new THREE.SpriteMaterial({
+    map: haloTex(), color: '#ffd28a', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  const washMat = new THREE.SpriteMaterial({
+    map: haloTex(), color: '#ffb36b', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  let nb = 0;
+  const bulb = (x, y, z, halo) => {
+    const k = nb++ % 3;
+    const b = new THREE.Mesh(bulbGeo, bulbMats[k]);
+    b.position.set(x, y, z);
+    b.renderOrder = 6;
+    const h = new THREE.Sprite(haloMats[k]);
+    h.position.set(x, y, z);
+    h.scale.setScalar(halo);
+    h.renderOrder = 6;
+    lights.add(b, h);
+  };
+  for (const z of [-0.45, 0.45]) {
+    for (let x = 0.3; x < len - 0.05; x += 0.6) {
+      if (tx.some(t => Math.abs(x - t) < 0.2)) continue;
+      bulb(x, cableY(x), z, 0.7);
+    }
+    for (let x = 0.5; x < len; x += 1.0) bulb(x, deckY + 0.26, z * 0.96, 0.55);
+    for (const x of tx) bulb(x, topY + 0.06, z, 1.1);
+  }
+  for (let x = 0.75; x < len; x += 1.5) {
+    const w = new THREE.Sprite(washMat);
+    w.position.set(x, deckY + 0.2, 0);
+    w.scale.set(1.8, 1.0, 1);
+    w.renderOrder = 6;
+    lights.add(w);
+  }
+  lights.visible = false;
+  g.add(lights);
+  // v: 0 = off .. 1 = fully lit; t: seconds, for the shimmer
+  function setLights(v, t) {
+    lights.visible = v > 0.002;
+    if (!lights.visible) return;
+    for (let k = 0; k < 3; k++) {
+      const p = 0.72 + 0.28 * Math.sin(t * 2.2 + k * 2.1);
+      bulbMats[k].opacity = v * (0.6 + 0.25 * p);
+      haloMats[k].opacity = v * 0.55 * p;
+    }
+    washMat.opacity = v * 0.22;
+  }
   // the window at the end, facing back along the bridge
   const W = 1.5, H = 2.1, t = 0.12;
   const frame = new THREE.Group();
@@ -1696,7 +1748,7 @@ export function suspensionBridge(r, len) {
   frame.add(glow);
   frame.position.set(len + 0.05, deckY + 0.06, 0);
   g.add(frame);
-  return { group: g, window: win };
+  return { group: g, window: win, frame, setLights };
 }
 
 // ------------------------------------------------------------- song scenes
@@ -1965,6 +2017,7 @@ function hangingLamp(g, x, y, z, len = 0.9) {
   const glow = lampHalo(2.6);
   glow.position.copy(bulb.position);
   g.add(cord, shade, bulb, glow);
+  return { bulb, glow };
 }
 
 // 不想去遠方: a bedroom-ish room in Taiwan, its window open on the mountains
@@ -2079,8 +2132,10 @@ export function bathroomRoom(r) {
   g.add(tRail, towel);
   const plant = pottedPlant(r, 0.7); plant.position.set(1.1, sill + 0.08, 0.2);
   g.add(plant);
-  hangingLamp(g, -1.7, RH, 1.6, 0.5);
-  return { group: g, eye, duck };
+  // the lamp over the tub flickers a little (world.js)
+  const lamp = hangingLamp(g, -1.7, RH, 1.6, 0.5);
+  lamp.baseColor = lamp.bulb.material.color.clone();
+  return { group: g, eye, duck, lamp };
 }
 
 // 晚安台灣: a road just inside the island's edge, all the way round, with
@@ -2129,7 +2184,7 @@ export function ringRoad(radial, { inset = 0.42, width = 0.36, n = 180, lamps = 
 // The Big Apple: a low-poly apple with a dimpled top, a stem and one leaf.
 export function bigApple() {
   const g = new THREE.Group();
-  const geo = new THREE.IcosahedronGeometry(1, 2);
+  const geo = new THREE.IcosahedronGeometry(1, 4);      // finer mesh: round, not chunky
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
@@ -2140,7 +2195,8 @@ export function bigApple() {
     const wide = 1 + 0.08 * y;                          // a little wider at the shoulders
     p.setXYZ(i, x * wide, y, z * wide);
   }
-  const body = mesh(faceted(geo), toon('#f0402f', { colorB: '#b81d2a', grad: [-0.8, 0.7] }));
+  geo.computeVertexNormals();                           // smooth shading, no facets
+  const body = mesh(geo, toon('#f0402f', { colorB: '#b81d2a', grad: [-0.8, 0.7] }));
   const stem = mesh(box(0.07, 0.42, 0.07), toon(C.wood), { edges: false });
   stem.position.set(0.02, 0.74, 0);
   stem.rotation.z = -0.18;
@@ -2307,7 +2363,7 @@ const fishMat = (c, op = 1, shaded = false) => {
   if (!fishMats.has(k)) fishMats.set(k, new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide, transparent: op < 1, opacity: op, vertexColors: shaded }));
   return fishMats.get(k);
 };
-let fishBodyGeo = null, fishTailGeo = null, fishFinGeo = null;
+let fishBodyGeo = null, fishTailGeo = null;
 export function schoolFish(color) {
   if (!fishBodyGeo) {
     // body: a teardrop profile spun round its length (tail at u = 0, nose at
@@ -2333,9 +2389,6 @@ export function schoolFish(color) {
     t.bezierCurveTo(-0.24, 0.1, -0.24, -0.1, -0.32, -0.26);
     t.bezierCurveTo(-0.25, -0.2, -0.12, -0.08, 0, 0);
     fishTailGeo = new THREE.ShapeGeometry(t, 8).rotateY(-Math.PI / 2);
-    const f = new THREE.Shape();
-    f.moveTo(0, 0); f.quadraticCurveTo(-0.08, -0.14, -0.2, -0.16); f.quadraticCurveTo(-0.1, -0.04, 0, 0);
-    fishFinGeo = new THREE.ShapeGeometry(f, 4).rotateY(-Math.PI / 2);
   }
   const g = new THREE.Group();
   g.add(new THREE.Mesh(fishBodyGeo, fishMat(color, 1, true)));
@@ -2343,13 +2396,10 @@ export function schoolFish(color) {
   tail.position.z = -0.48;
   tail.add(new THREE.Mesh(fishTailGeo, fishMat(color)));
   g.add(tail);
-  // a fin on each side, angled out from the body
-  for (const s of [-1, 1]) {
-    const fin = new THREE.Mesh(fishFinGeo, fishMat(color, 0.55));
-    fin.position.set(0.1 * s, -0.06, 0.12);
-    fin.rotation.z = 0.5 * s;
-    g.add(fin);
-  }
+  // no fins — just body and tail, and a soft halo of the fish's own color
+  const glow = steadyGlow(1.1, color, 0.38);
+  glow.position.z = 0.05;
+  g.add(glow);
   return { group: g, tail };
 }
 
@@ -2412,7 +2462,8 @@ export function bigClock() {
   return { group: g, body, hour, minute, second };
 }
 
-// Fireflies: warm points drifting round a spot, each flickering on and off.
+// Fireflies: pastel neon points drifting round a spot, each flickering on
+// and off — every one its own soft color (pink, mint, baby blue, lavender...).
 export function fireflies(n = 40, radius = 1.8) {
   const pos = [], seed = [];
   for (let i = 0; i < n; i++) {
@@ -2429,24 +2480,29 @@ export function fireflies(n = 40, radius = 1.8) {
       uniform float uTime, uLoop, uPxH;
       attribute float aSeed;
       varying float vA;
+      varying vec3 vCol;
       const float TAU = 6.28318530718;
       void main() {
         float ph = uTime / uLoop;
         float k1 = 2.0 + floor(aSeed * 3.0), k2 = 3.0 + floor(fract(aSeed * 7.0) * 3.0);
         vec3 p = position + vec3(sin(TAU * (ph * k1 + aSeed)) * 0.35, sin(TAU * (ph * k2 + aSeed * 3.0)) * 0.25, cos(TAU * (ph * k1 + aSeed * 5.0)) * 0.35);
-        // flicker: mostly dim, then a soft pulse of light
+        // flicker: a glowing base, then a soft pulse of light
         float f = pow(max(0.0, sin(TAU * (ph * (8.0 + floor(aSeed * 9.0)) + aSeed * 11.0))), 3.0);
-        vA = 0.3 + 0.6 * f;
+        vA = 0.45 + 0.6 * f;
+        // each firefly's own pastel: a soft rainbow, never saturated
+        float hue = fract(aSeed * 7.31);
+        vCol = 0.76 + 0.24 * cos(TAU * (hue + vec3(0.0, 0.33, 0.67)));
         gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-        gl_PointSize = max(5.0, 0.28 * projectionMatrix[1][1] * uPxH * 0.5);
+        gl_PointSize = max(6.0, 0.4 * projectionMatrix[1][1] * uPxH * 0.5);
       }`,
     fragmentShader: /* glsl */`
       varying float vA;
+      varying vec3 vCol;
       void main() {
         float d = length(gl_PointCoord - 0.5);
-        float a = (smoothstep(0.5, 0.0, d) * 0.25 + smoothstep(0.16, 0.0, d) * 0.85) * vA;
+        float a = (smoothstep(0.5, 0.0, d) * 0.3 + smoothstep(0.18, 0.0, d) * 0.95) * vA;
         if (a < 0.01) discard;
-        gl_FragColor = vec4(vec3(0.95, 0.97, 0.9) * a * 0.8, a);
+        gl_FragColor = vec4(vCol * a, a);
       }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });

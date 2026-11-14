@@ -467,3 +467,98 @@ listed in the order they were requested, newest at the bottom.
 - **README split.** `README.md` is now a short introduction and quick start;
   the full manual moved to `GUIDE.md`, with a new section on streaming to
   YouTube with OBS.
+
+## Round 21: viewer froze on the first close-up
+
+- **Fixed: the viewer froze at song 4 and stayed frozen.** The new
+  close-up check (what's in the way of the camera) also tested a sprite,
+  which can't be tested that way and threw an error, and that error
+  stopped the viewer's drawing loop. (That check is now gone; see below.)
+- **The viewer can't freeze from one bad frame any more.** It asks for the
+  next frame first, so an error in one frame only skips that frame.
+- **No more flicker or slicing from the close-up cut** (songs 4→5, 5→6,
+  12→13, 22, 22→23, 24→25, 25→26, 26, 26→27). The "cut only what's in
+  the way" check looked along one line from the subject, and anything
+  moving across that line (a turning island, a pole, a drifting house)
+  made the cut jump back and forth, slicing things open. It's replaced by
+  the cut saved with each view (just outside the window or wall it looks
+  through), which never moves while the camera is there.
+- **Close-ups dissolve in and out instead of popping.** During a move
+  nothing is cut. Arriving at a close-up, whatever stands in front of it
+  (a drifting house, the lighthouse, the floating things before the
+  bridge) dissolves away in a fine dot pattern over the last 30% of the
+  move; leaving one, it dissolves back in over the first 30%. Nothing
+  vanishes or reappears at once (this was the "jump" on 22 → 23).
+- **Song 6 / 浪流連 shows the bridge again.** The old check found the
+  bridge itself "in the way" and cut it off.
+- **Drifting houses stay out of the rooms** of songs 12 (lookout) and 25
+  (dining room). Three of them drifted through; they now keep just clear
+  (every other drifting house is exactly where it was).
+- **28 → 29 no longer jumps at the end.** Moves were capped at 80° looking
+  down, but song 29 is saved at 85°, so the camera snapped the last 5° at
+  the end. The cap now allows the steeper end.
+
+## Round 22: dimmer per song, controller layout
+
+- **The sky dimmer no longer carries over between songs.** It was already
+  saved with each view, but the 28 views saved before the dimmer existed
+  have no dimmer value, so those songs kept whatever the song before had
+  (play 想家 at −70%, then jump to another song, and it stayed dark). Now a
+  song that never saved a dimmer opens with it off.
+- **Camera moved under Motion and Atmosphere.** The controller is two
+  columns now: songs on the left; Motion and Atmosphere side by side on
+  the right, with Camera across the bottom (four camera buttons per row,
+  zoom / angle / orbit in one row). Narrow windows still stack everything.
+
+## Round 23: songs, booth, smoother changes, camera controls (2026-11-14)
+
+- **鹿港小鎮 removed.** Its wide Taiwan view, hour and sky went to 想厝的人.
+- **浪流連: the bridge lights up and turns.** Warm bulbs along its cables,
+  rails and tower tops. During the song it slowly turns around its middle
+  and drifts clear of New York; flying houses keep out of its way. Any song
+  can do this with `bridge: { lights, spin }` in `js/songs.js`.
+- **No more near clipping** on 不想去遠方 (zoomed in) and 浴室 (the camera
+  now rides with the floating house).
+- **浴室: the lamp over the tub flickers** a little.
+- **在凌晨: subway stairs, no island.** Two entrances float free, one upside
+  down below the other, joined by a switchback stair of solid steps with
+  small warm lights and a lamp over the landing. Clear of the baggage belt.
+- **忽然之間:** camera panned so the clock sits left; the clock runs at half
+  speed.
+- **抱著你:** a still camera watching Taiwan turn, New York behind it.
+- **我給的愛:** 110 pastel neon fireflies; a wider orbit with the ladder and
+  window on the left; auto orbit saved on.
+- **牽掛:** the camera orbits the spiral stairs (new *Spiral Stairs (orbit)*
+  camera); auto orbit saved on.
+- **無眠:** rooftop billboards: the cloud and moon screens became slow
+  gradient animations; every screen has a gliding sheen and a slow
+  brightness breath. Camera centered on them.
+- **未接來電: a retro phone booth** high between the islands (the two phones
+  and their cord are gone): tan frame, glass, a two-leaf door, a lit PHONE
+  band, a ceiling light, and a payphone with keypad, coiled cord and a phone
+  book. It glows. Eight paper planes orbit it in one ring, banking in.
+- **Fish:** no fins; each one glows softly in its own color.
+- **Big Apple:** rounder and smooth-shaded.
+- **Dream glass (new effect).** A soft blur and glow over the whole picture,
+  like fogged glass. Slider under Look; saved with each song.
+- **Sky dimmer keeps the world readable.** Dark colors get a faint inner
+  light and edges glow softly against the dark sky.
+- **Smoother song changes.** Sky, hour, light and effects now travel on one
+  eased timeline (soft start, soft landing, at least 6 s), and the light
+  crossfades straight from the old hour to the new one instead of racing
+  through every hour in between.
+- **Island breathing off by default**, and switched off in the 25 saved
+  views that had it on.
+- **Controller:**
+  - the Active panel shows the sky (swatch + name) and the time in both cities
+  - three Sky color pickers (top / middle / bottom)
+  - **Auto orbit (non-stop):** the camera circles once a minute; saved with
+    each song
+  - **Pan ◀ Left · Center · Right ▶:** glides the view a tenth of the screen
+    per press, along the screen's own left and right
+  - zoom, camera angle, orbit and pan moved into the Motion card, under
+    Floating / Displacement
+- **Fixed:** the Bathroom, Lookout and Dining Room camera buttons now show
+  their rooms.
+- **`songs.txt`** lists every song's current view, camera (static / follow /
+  orbit), time, sky and extras.

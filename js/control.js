@@ -21,6 +21,7 @@ const fmt = {
   birdSpeed: v => `${v.toFixed(2)}×`,
   contrast: v => v === 1 ? 'as drawn' : `${v > 1 ? '+' : '−'}${Math.round(Math.abs(v - 1) * 100)}%`,
   skyDim: v => v === 0 ? 'off' : `−${Math.round(v * 100)}%`,  zoom: v => `${v.toFixed(2)}×`,
+  dream: v => v === 0 ? 'off' : `${Math.round(v * 100)}%`,
   cameraAngle: v => `${v.toFixed(1)}°`,
   cameraOrbit: v => `${v > 0 ? '+' : ''}${Math.round(v)}°`,
   transition: v => `${v.toFixed(1)} s`,
@@ -119,7 +120,7 @@ const viewFor = (s) => {
 // Saved with each view along with the camera, hour and sky. Anything a song
 // hasn't saved keeps its value from songs.js, or from the song before.
 // (House layout and stroke style are never saved per song.)
-const SAVED_SETTINGS = ['floatIntensity', 'birdSpeed', 'breatheOn', 'rippleOn', 'rainOn', 'snowOn', 'contrast', 'skyDim'];
+const SAVED_SETTINGS = ['floatIntensity', 'birdSpeed', 'breatheOn', 'rippleOn', 'rainOn', 'snowOn', 'contrast', 'skyDim', 'dream', 'autoOrbit'];
 
 function songCamera(s) {
   const saved = viewFor(s);
@@ -136,6 +137,7 @@ function applySavedView(v) {
   state.cameraAngle = v.elevation;
   state.cameraOrbit = 0;
   state.cameraPanX = 0; state.cameraPanY = 0; state.cameraPanZ = 0;
+  state.panScreen = 0;
   applyEffects(v.effects);
   state.cameraCue += 1;
 }
@@ -148,6 +150,7 @@ function applyPreset(id) {
   state.cameraAngle = p.elevation;
   state.cameraOrbit = 0;
   state.cameraPanX = 0; state.cameraPanY = 0; state.cameraPanZ = 0;
+  state.panScreen = 0;
   if (p.atmosphere) applyAtmosphere(p.atmosphere);
   applyEffects(p.effects);
   state.cameraCue += 1;
@@ -164,6 +167,11 @@ function activateScene(i) {
   i = ((i % SONG_SCENES.length) + SONG_SCENES.length) % SONG_SCENES.length;
   const s = SONG_SCENES[i];
   const cam = songCamera(s);
+  // the dimmer belongs to the song that saved it: a song that never saved one
+  // (views saved before the dimmer existed) opens with it off, instead of
+  // keeping whatever the song before had
+  state.skyDim = 0;
+  state.autoOrbit = false;   // likewise: only songs saved with it keep circling
   if (cam.view) applySavedView(cam.view);
   else { applyPreset(cam.legacy.camera || s.camera); applyLegacy(cam.legacy); }
   if (s.atmosphere) applyAtmosphere(s.atmosphere);
@@ -187,21 +195,25 @@ function activateScene(i) {
   selectedSong = i;
   render();
   push(true);
-  revealInList(i);
+  revealInList(i, true, true);   // the playing song at the top, the next ones below
 }
 
 // Scroll only the song list (never the page) so the active song shows,
 // keeping Prev / Next where they are under your finger.
-function revealInList(i, smooth = true) {
+// toTop: put that song at the top of the list's window, so the songs coming
+// next show under it (playing 20 shows 20–24). Otherwise scroll only as far
+// as needed to bring it into view (moving the selection with the arrow keys).
+function revealInList(i, smooth = true, toTop = false) {
   const list = $('#songList');
   const li = list?.querySelector(`li[data-i="${i}"]`);
   if (!li) return;
   const top = li.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
   const bottom = top + li.offsetHeight;
   let y = list.scrollTop;
-  if (top < y) y = top;
+  if (toTop) y = Math.min(top, list.scrollHeight - list.clientHeight);
+  else if (top < y) y = top;
   else if (bottom > y + list.clientHeight) y = bottom - list.clientHeight;
-  if (y !== list.scrollTop) list.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
+  if (Math.abs(y - list.scrollTop) > 0.5) list.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
 }
 
 // what to call a song's camera in the list
@@ -307,6 +319,17 @@ function render() {
     out.textContent = fmt[k] ? fmt[k](state[k]) : state[k];
   }
   $('#skyPreview').style.background = `linear-gradient(100deg, ${state.bgTop}, ${state.bgMid}, ${state.bgBottom})`;
+  // what the viewer is showing right now: the sky (as the viewer stacks it,
+  // top to bottom) and the hour
+  const skyList = [state.bgTop, state.bgMid, state.bgBottom].map(c => String(c).toLowerCase());
+  $('#activeSkySwatch').style.background = `linear-gradient(180deg, ${skyList.join(', ')})`;
+  const atm = ATMOSPHERES.find(p => p.colors.every((c, j) => c.toLowerCase() === skyList[j]));
+  $('#activeSky').textContent = atm ? atm.id : 'custom';
+  $('#skyHex').textContent = skyList.join(' · ');
+  const pn = Math.round(state.panScreen * 100);
+  $('#panOut').textContent = pn === 0 ? 'centered' : `${pn > 0 ? 'right' : 'left'} ${Math.abs(pn)}%`;
+  const hr = Math.round(state.twHour) % 24;
+  $('#activeTime').textContent = `${pad(hr)}:00 TW · ${pad((hr + 12) % 24)}:00 NY`;
   for (const b of $$('.preset')) {
     const p = ATMOSPHERES.find(x => x.id === b.dataset.id);
     b.setAttribute('aria-pressed', String(p.colors[0] === state.bgTop && p.colors[1] === state.bgMid && p.colors[2] === state.bgBottom));
@@ -359,6 +382,16 @@ for (const el of $$('[data-key]')) {
     });
   }
 }
+
+// camera pan left / right: each press glides the view a tenth of the screen
+// (the viewer eases it in and out, so it never jolts)
+const panBy = (d) => {
+  state.panScreen = d === 0 ? 0 : Math.max(-0.5, Math.min(0.5, Math.round((state.panScreen + d) * 100) / 100));
+  render(); push();
+};
+$('#panLeft').addEventListener('click', () => panBy(-0.1));
+$('#panRight').addEventListener('click', () => panBy(0.1));
+$('#panCenter').addEventListener('click', () => panBy(0));
 
 $('#rearrange').addEventListener('click', () => {
   let s;
@@ -475,6 +508,7 @@ if (channel) {
       state.cameraPreset = m.view.scene || 'view';
       state.zoom = m.view.zoom; state.cameraAngle = m.view.elevation; state.cameraOrbit = 0;
       state.cameraPanX = 0; state.cameraPanY = 0; state.cameraPanZ = 0;
+      state.panScreen = 0;
       render();
       push();
     }
@@ -495,6 +529,35 @@ setInterval(() => {
     statusText.textContent = 'viewer not open';
   }
 }, 800);
+
+// Narrow window (performing): one column, and the Active song with Prev /
+// Activate / Next moves into a dock that sticks to the top of the window.
+// Wide window: it goes back into the Song scenes card.
+{
+  const now = $('#nowPanel'), dock = $('#nowDock'), songsCard = $('#songs');
+  const home = songsCard.querySelector('h2');
+  const narrow = window.matchMedia('(max-width: 1099px)');
+  const list = $('#songList');
+  // narrow: the song list shows exactly 5 songs; the rest scroll
+  const sizeList = () => {
+    if (!narrow.matches) { list.style.maxHeight = ''; return; }
+    const li = list.querySelector('li');
+    if (!li) return;
+    const cs = getComputedStyle(list);
+    const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    list.style.maxHeight = `${Math.ceil(li.getBoundingClientRect().height * 5 + border)}px`;
+  };
+  const place = () => {
+    if (narrow.matches) { if (now.parentElement !== dock) dock.appendChild(now); }
+    else if (now.parentElement !== songsCard) home.after(now);
+    document.body.classList.toggle('narrow', narrow.matches);
+    sizeList();
+    if (state.activeSong >= 0) revealInList(state.activeSong, false, true);
+  };
+  narrow.addEventListener('change', place);
+  window.addEventListener('resize', sizeList);
+  place();
+}
 
 render();
 push();

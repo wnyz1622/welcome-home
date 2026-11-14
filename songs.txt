@@ -1,0 +1,220 @@
+SONG VIEWS — current setup (from views.json + js/songs.js, updated 2026-11-14)
+
+camera:  static = fixed spot, the world moves in front of it
+         follow = rides along with a moving subject
+         orbit  = slowly circles the subject, one turn per 2-min loop
+time:    TW hour / NY hour (NY = TW + 12)
+sky:     preset name in the controller (Sky + time)
+Controls (Motion card): zoom, camera angle, orbit, Auto orbit (non-stop:
+one extra turn a minute, saved with the song) and Pan Left / Center /
+Right (glides a tenth of the screen per press, kept when you Save view).
+
+-完美落地
+1. view: from the aircraft windows (cabin, three windows)
+2. camera: follow (the drifting airplane)
+3. time: 16:00 TW / 04:00 NY — starts from black, fades in
+4. sky: harbor
+
+-回家
+1. view: bus stop island
+2. camera: static
+3. time: 10:00 TW / 22:00 NY
+4. sky: dawn · sky dimmer 20%
+
+-想厝的人
+1. view: Taiwan, wide (was 鹿港小鎮's view; 鹿港小鎮 removed)
+2. camera: static
+3. time: 07:00 TW / 19:00 NY
+4. sky: between
+
+-想家
+1. view: New York island (manhattanhenge light)
+2. camera: static
+3. time: 06:00 TW / 18:00 NY
+4. sky: dusk · sky dimmer 70%
+
+-浪流連
+1. view: the floating bridge into its window
+2. camera: follow (the bridge window)
+3. time: 09:00 TW / 21:00 NY
+4. sky: twilight
+5. extra: bridge lights up (warm bulbs on cables, rails, towers) and
+   slowly turns around its middle, drifting clear of New York
+
+-大人中
+1. view: baggage belt (conveyor)
+2. camera: static
+3. time: 23:00 TW / 11:00 NY
+4. sky: lawn
+
+-紐約鄰居
+1. view: New York close-up (streets + taxis)
+2. camera: static
+3. time: 09:00 TW / 21:00 NY
+4. sky: harbor
+
+-家
+1. view: Taiwan, bird's-eye
+2. camera: static
+3. time: 20:00 TW / 08:00 NY
+4. sky: late
+
+-在這座城市遺失了你
+1. view: New York, bird's-eye
+2. camera: static
+3. time: 20:00 TW / 08:00 NY
+4. sky: dawn · ripple on · float 2.4
+
+-超大行李
+1. view: luggage island / baggage belt
+2. camera: static
+3. time: 00:00 TW / 12:00 NY
+4. sky: twilight · ripple on
+
+-不想去遠方
+1. view: from inside the lookout room, out to the mountains and the
+   neighbors' houses
+2. camera: static (zoomed in to 7.3 to avoid near clipping)
+3. time: 18:00 TW / 06:00 NY
+4. sky: twilight
+
+-浴室
+1. view: inside the pink bathroom of a floating house, window on New York
+2. camera: follow (the floating house — no more wall clipping)
+3. time: 11:00 TW / 23:00 NY
+4. sky: dawn
+5. extra: lamp over the tub flickers subtly
+
+-在凌晨
+1. view: two floating subway entrances (one upside down below) joined by
+   a switchback stair — no island; tall block steps, warm lights on the
+   steps and a lamp over the landing
+2. camera: follow (the subway stairs)
+3. time: 12:00 TW / 00:00 NY
+4. sky: late · sky dimmer 45% · float 2.2
+
+-我想和你一起
+1. view: two birds flying side by side
+2. camera: follow (the bird pair, from behind)
+3. time: 08:00 TW / 20:00 NY
+4. sky: dawn · float 3.6
+
+-晚安台灣
+1. view: the bus road-tripping round Taiwan (ring road + street lamps)
+2. camera: follow (the bus)
+3. time: 00:00 TW / 12:00 NY
+4. sky: late · rain on
+
+-我在紐約打電話給你
+1. view: New York close-up (building fire-escape stairs)
+2. camera: static
+3. time: 00:00 TW / 12:00 NY
+4. sky: henge · snow on
+
+-親愛的
+1. view: lighthouse
+2. camera: static (tip: switch on Auto orbit for the orbit idea)
+3. time: 16:00 TW / 04:00 NY
+4. sky: midnight · snow on · float 4.6
+
+-旅行的意義
+1. view: the airliner
+2. camera: follow (the airliner)
+3. time: 06:00 TW / 18:00 NY
+4. sky: late
+
+-魚
+1. view: windmill island, glowing neon fish (no fins) spiraling round
+   the wind turbine
+2. camera: static
+3. time: 15:00 TW / 03:00 NY
+4. sky: between
+
+-忽然之間
+1. view: the big floating clock, sitting on the left of the frame
+2. camera: static
+3. time: 10:00 TW / 22:00 NY
+4. sky: lawn · float 2.6
+5. extra: clock runs at half speed (minute hand: one turn / 20 s)
+
+-抱著你
+1. view: Taiwan in front, turning, with New York lit up behind it
+2. camera: static (the island turns, the camera holds)
+3. time: 22:00 TW / 10:00 NY
+4. sky: late
+
+-我給的愛
+1. view: the ladder and its window, on the left of the frame; pastel
+   neon fireflies (110) round the window
+2. camera: orbit (round the ladder) + auto orbit on
+3. time: 11:00 TW / 23:00 NY
+4. sky: between
+
+-牽掛
+1. view: the spiral staircase island
+2. camera: orbit (round the stairs) + auto orbit on
+3. time: 19:00 TW / 07:00 NY
+4. sky: lawn
+
+-一桌菜
+1. view: from the dining room, round red table inside
+2. camera: static
+3. time: 19:00 TW / 07:00 NY
+4. sky: twilight
+
+-無眠
+1. view: night-time New York, looking at the rooftop billboards
+   (gradient animations, sheen + breathing on every screen)
+2. camera: follow (the New York window, centered on the billboards)
+3. time: 14:00 TW / 02:00 NY
+4. sky: dusk · snow on
+
+-台北某個地方
+1. view: grove island close-up, laundry hanging out
+2. camera: static
+3. time: 07:00 TW / 19:00 NY
+4. sky: lawn
+
+-愛我別走
+1. view: looking at the baggage belt (conveyor)
+2. camera: static
+3. time: 17:00 TW / 05:00 NY
+4. sky: lawn
+
+-San Francisco Street
+1. view: New York crossroads, street level
+2. camera: follow (the crossroads)
+3. time: 23:00 TW / 11:00 NY
+4. sky: lawn
+
+-Love Lee
+1. view: the big apple (now round and smooth)
+2. camera: orbit (round the apple)
+3. time: 23:00 TW / 11:00 NY
+4. sky: dawn · ripple on · float 2.2
+
+-Lucky
+1. view: departures board, between the portals
+2. camera: static
+3. time: 11:00 TW / 23:00 NY
+4. sky: dawn · ripple on
+
+-Soft Spot
+1. view: world overview
+2. camera: static
+3. time: 18:00 TW / 06:00 NY
+4. sky: lawn · ripple on
+
+-未接來電
+1. view: a glowing retro phone booth high in the sky between the
+   islands (glass, PHONE band, payphone, phone book), eight simple paper
+   planes orbiting it in one ring (the two phones + cord removed)
+2. camera: follow (the phone booth)
+3. time: 18:00 TW / 06:00 NY
+4. sky: late · sky dimmer 57%
+
+-勇氣
+1. view: the standing window
+2. camera: static
+3. time: 11:00 TW / 23:00 NY
+4. sky: lawn · float 3.6 (scattered)

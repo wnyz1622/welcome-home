@@ -582,26 +582,21 @@ export function dreamyBoardMaterial(seed) {
         vec2 p = vUv;
         float mode = floor(h1(uSeed + 5.3) * 5.0);
         vec3 col;
-        if (mode < 0.5) {                                   // clouds drifting over a soft sky
-          col = mix(uB, uA, smoothstep(0.0, 1.0, p.y));
-          float cl = 0.0;
-          for (int i = 0; i < 4; i++) {
-            float fi = float(i);
-            float x = fract(h1(uSeed + fi) + ph * (1.0 + fi)) * 1.6 - 0.3;
-            vec2 d = (p - vec2(x, 0.25 + 0.5 * h1(uSeed + fi * 3.0))) * vec2(1.0, 2.2);
-            cl = max(cl, exp(-dot(d, d) * 18.0) + 0.6 * exp(-dot(d - vec2(0.08, 0.03), d - vec2(0.08, 0.03)) * 30.0));
-          }
-          col = mix(col, uC, smoothstep(0.35, 0.8, cl));
-        } else if (mode < 1.5) {                            // night: stars and a moon crossing
-          col = mix(uA * 0.6, uA, p.y);
-          vec2 g = floor(p * vec2(26.0, 14.0));
-          float st = step(0.9, h2(g + uSeed)) * (0.5 + 0.5 * sin(TAU * (ph * (6.0 + floor(h2(g) * 6.0)) + h2(g + 3.0))));
-          vec2 f = fract(p * vec2(26.0, 14.0)) - 0.5;
-          col += uC * st * smoothstep(0.25, 0.0, length(f)) * 0.9;
-          vec2 mp = vec2(fract(ph + h1(uSeed)) * 1.4 - 0.2, 0.62 + 0.15 * sin(TAU * ph));
-          float md = length((p - mp) * vec2(1.6, 1.0));
-          col = mix(col, uC, smoothstep(0.11, 0.1, md));
-          col += uC * exp(-md * md * 40.0) * 0.25;
+        if (mode < 0.5) {                                   // a gradient slowly turning round the screen
+          vec2 d0 = p - 0.5;
+          float a1 = TAU * (ph + h1(uSeed + 1.0));          // one turn per loop
+          float g1 = clamp(dot(d0, vec2(cos(a1), sin(a1))) + 0.5, 0.0, 1.0);
+          col = mix(uA, uB, smoothstep(0.1, 0.9, g1));
+          // a soft pool of the third color breathing in the middle
+          float bl = exp(-dot(d0, d0) * (3.0 + 1.6 * sin(TAU * ph * 2.0)));
+          col = mix(col, uC, bl * 0.55);
+        } else if (mode < 1.5) {                            // colors crossfading down a gradient
+          vec3 top = mix(uA, uC, 0.5 + 0.5 * sin(TAU * (ph + h1(uSeed))));
+          vec3 bot = mix(uB, uA, 0.5 + 0.5 * sin(TAU * (ph * 2.0 + h1(uSeed + 2.0))));
+          col = mix(bot, top, smoothstep(0.0, 1.0, p.y));
+          // a soft band of light drifting upward, wrapping round
+          float yb = fract(ph * 3.0 + h1(uSeed + 4.0));
+          col += uC * 0.3 * exp(-pow((p.y - (yb * 1.4 - 0.2)) / 0.18, 2.0));
         } else if (mode < 2.5) {                            // liquid color blobs
           float f = 0.0;
           for (int i = 0; i < 3; i++) {
@@ -627,6 +622,11 @@ export function dreamyBoardMaterial(seed) {
           col = mix(col, uC, bar * 0.75);
           col += uC * 0.12 * sin(TAU * (p.y * 3.0 - ph * 8.0));
         }
+        // ambient life on every screen: a diagonal sheen gliding across, and
+        // a slow breath of brightness, out of step per board
+        float sheen = exp(-pow(fract(ph * 2.0 + h1(uSeed + 9.0)) * 2.4 - (p.x + p.y), 2.0) * 6.0);
+        col += (uC - col) * sheen * 0.18;
+        col *= 0.96 + 0.06 * sin(TAU * (ph * 3.0 + h1(uSeed + 6.0)));
         col *= 0.92 + 0.25 * uLightAmt;
         vec2 e = min(p, 1.0 - p);
         if (min(e.x, e.y) < 0.03) col = uFrame;

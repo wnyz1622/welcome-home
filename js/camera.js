@@ -31,32 +31,19 @@ export function safeDistance(spec, zoom) {
 // a preset id, a preset, or a saved view: all go through the same rig
 const asSpec = (x) => (isView(x) ? x : presetById(typeof x === 'string' ? x : x?.id));
 
-// Close-ups no longer slice at a fixed distance. Once a camera comes in close
-// (below CUT_ON), it looks back along its own line of sight for the first
-// solid thing actually between it and the subject, and cuts just in front of
-// that. Nothing in the way: nothing is cut. Things within KEEP of the subject
-// (a window's cage, its sill) always count as the subject and stay.
-const CUT_ON = 40, KEEP = 1.2;
+// Close-ups cut at the distance saved with their view (just outside the wall
+// or window they look through). That cut is fixed, so it never flickers.
+// During a move nothing is cut, so nothing gets sliced open on the way.
+// Instead, what stands in front of a close-up dissolves in a fine dot pattern
+// (see clip, used by the viewer): leaving a close-up, it fades back in over
+// the first 30% of the move; arriving at one, it fades away over the last
+// 30%. Nothing pops in or out of the picture.
+const LEAVE = 0.3, ARRIVE = 0.7;
 
-export function createCameraRig(camera, anchors, occluders = null) {
+export function createCameraRig(camera, anchors) {
   const pose = { target: new V3(0, 0.5, -1), dir: new V3(0, 0.5, 0.866).normalize(), dist: 140, zoom: 0.56 };
-  const ray = new THREE.Raycaster();
-  let cutD = FAR_BACK, cutFrame = 0;
-  const solid = (o) => {
-    if (!o.isMesh) return false;
-    const m = o.material;
-    if (Array.isArray(m) ? m.every(x => x.transparent) : m.transparent) return false;   // halos, beams, glass
-    for (let x = o; x; x = x.parent) if (!x.visible) return false;
-    return true;
-  };
-  function clearDistance(target, dir) {
-    ray.set(target, dir);
-    ray.near = KEEP; ray.far = FAR_BACK;
-    for (const h of ray.intersectObject(occluders, true)) {
-      if (solid(h.object)) return Math.max(KEEP - 0.2, h.distance - 0.3);
-    }
-    return FAR_BACK;
-  }
+  let lastDist = FAR_BACK;
+  const clip = { z: 0, fade: 0 };   // dissolve things nearer the camera than z (fade 0..1)
   const des = { target: new V3(), dir: new V3(), dist: 1, zoom: 1 };
   const q = new THREE.Quaternion();
   const p = new V3();
@@ -81,7 +68,7 @@ export function createCameraRig(camera, anchors, occluders = null) {
   function go(id, duration, nowSec) {
     preset = asSpec(id);
     trans = {
-      from: { target: pose.target.clone(), dir: pose.dir.clone(), dist: pose.dist, zoom: pose.zoom },
+      from: { target: pose.target.clone(), dir: pose.dir.clone(), dist: pose.dist, zoom: pose.zoom, cut: lastDist },
       start: nowSec,
       dur: Math.max(0.05, duration),
     };
@@ -139,6 +126,8 @@ export function createCameraRig(camera, anchors, occluders = null) {
 
   function update(nowSec, elevation, zoom, orbit, pan) {
     desired(preset, elevation, zoom, orbit, pan);
+    let cut = FAR_BACK;
+    clip.fade = 0;
     if (trans) {
       // Big turns (more than 90°) get more time and a rise in the middle,
       // so the camera curves up over the scene instead of whipping round.
@@ -166,27 +155,30 @@ export function createCameraRig(camera, anchors, occluders = null) {
       {
         const a = azEl(trans.from.dir), b = azEl(des.dir);
         const az = a.az + wrapPi(b.az - a.az) * e;
-        const el = Math.min(d2r(80), a.el + (b.el - a.el) * e + trans.lift * Math.sin(Math.PI * e));
+        // the rise never goes past 80° (or past the steeper end, so a view saved at 85° lands smoothly)
+        const el = Math.min(Math.max(d2r(80), a.el, b.el), a.el + (b.el - a.el) * e + trans.lift * Math.sin(Math.PI * e));
         pose.dir.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
       }
       pose.dist = llerp(trans.from.dist, des.dist, e);
       pose.zoom = llerp(trans.from.zoom, des.zoom, e);
+      cut = FAR_BACK;
+      if (e < LEAVE && trans.from.cut < FAR_BACK) {
+        clip.fade = 1 - e / LEAVE;
+        clip.z = FAR_BACK - trans.from.cut;
+      }
+      if (e > ARRIVE && des.dist < FAR_BACK) {
+        clip.fade = Math.min(1, (e - ARRIVE) / (1 - ARRIVE));
+        clip.z = FAR_BACK - des.dist;   // depth from the camera of the coming cut
+      }
       if (t >= 1) trans = null;
     } else {
       pose.target.copy(des.target);
       pose.dir.copy(des.dir);
       pose.dist = des.dist;
       pose.zoom = des.zoom;
+      cut = des.dist;
     }
-    // where to cut: far back for normal views; for close-ups, just in front of
-    // whatever is really in the way (checked every few frames)
-    let dist = FAR_BACK;
-    if (occluders && pose.dist < CUT_ON) {
-      if (cutFrame++ % 3 === 0) cutD = clearDistance(pose.target, pose.dir);
-      dist = cutD;
-    } else {
-      cutD = FAR_BACK; cutFrame = 0;
-    }
+    const dist = lastDist = cut;
     camera.position.copy(pose.target).addScaledVector(pose.dir, dist);
     camera.up.set(0, 1, 0);
     camera.lookAt(pose.target);
@@ -195,7 +187,7 @@ export function createCameraRig(camera, anchors, occluders = null) {
   }
 
   return {
-    go, jump, update, pose, makeView, resolve,
+    go, jump, update, pose, makeView, resolve, clip,
     get preset() { return preset; },
     get frameQuat() { return q; },   // the preset's frame (identity unless frame: 'local')
     get transitioning() { return !!trans; },

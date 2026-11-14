@@ -14,7 +14,7 @@ import {
   streetLamp, spiralStairs, portal,
   miniBus, animateBusStop, animateLuggage, lookoutRoom, bathroomRoom, ringRoad,
   bigApple, windmill, departuresBoard,
-  schoolFish, bigClock, fireflies, diningRoom, animateSteam, laundryLine, animateLaundry, rotaryPhone, mobilePhone,
+  schoolFish, bigClock, fireflies, diningRoom, animateSteam, laundryLine, animateLaundry, steadyGlow,
 } from './architecture.js';
 import { makeBird } from './birds.js';
 import { LIGHTS, toon, mesh, faceted } from './materials.js';
@@ -264,9 +264,27 @@ export function createWorld() {
   // leading nowhere but into a window
   const bridge = suspensionBridge(rand(9), 7.5);
   const bridgeBase = new V3(-30, -3.5, 13.5);
-  bridge.group.position.copy(bridgeBase);
-  world.add(bridge.group);
-  anchors.bridgeWindow = bridge.window;
+  // the camera's anchor: sits exactly on the window and bobs/sways with the
+  // bridge, but never takes the spin, so a song that turns the bridge
+  // (浪流連) shows it turning instead of turning the whole picture
+  bridge.group.updateMatrixWorld(true);
+  const bridgeAnchor = new THREE.Object3D();
+  bridge.window.matrixWorld.decompose(bridgeAnchor.position, bridgeAnchor.quaternion, new V3());
+  // bridgeRoot bobs and sways; bridgeSpin turns the whole bridge around its
+  // middle (a small circle, so it clears New York)
+  const bridgeRoot = new THREE.Group();
+  const bridgeSpin = new THREE.Group();
+  bridgeSpin.position.set(bridge.frame.position.x / 2, 0, 0);
+  // while it turns it also drifts this far out, away from New York's centre
+  const bridgeAwayDir = new V3(bridgeBase.x + bridgeSpin.position.x - WORLD.ny.center[0], 0, bridgeBase.z - WORLD.ny.center[2]).normalize();
+  const BRIDGE_AWAY = 4;
+  bridge.group.position.copy(bridgeSpin.position).negate();
+  bridgeSpin.add(bridge.group);
+  bridgeRoot.add(bridgeSpin, bridgeAnchor);
+  bridgeRoot.position.copy(bridgeBase);
+  world.add(bridgeRoot);
+  anchors.bridgeWindow = bridgeAnchor;
+  let bridgeLit = 0, bridgeTurn = 0, bridgeYaw = 0;
 
   // ---- New York: yellow cabs. Two loops (an inner and an outer lane) around
   // the avenues and the outermost cross streets; they drive, stop, drive.
@@ -627,7 +645,12 @@ export function createWorld() {
   const tiny = gableHouse(r, { w: 1.0, d: 1.1, h: 0.75, wall: C.softYellow, roof: C.green, door: C.roofBlue });
   satellite('tinyHouse', [34, 3.5, 11], satellitePlatform(1.2, 6, C.paper, [C.softGreen, C.roofBlue]), tiny.group);
 
-  satellite('stairs', [-37, 4.5, 9], satellitePlatform(1.6, 5, C.paper, [C.salmon, C.roofBlue]), spiralStairs());
+  const stairsSat = satellite('stairs', [-37, 4.5, 9], satellitePlatform(1.6, 5, C.paper, [C.salmon, C.roofBlue]), spiralStairs());
+  // 牽掛: an anchor that circles the spiral stairs once per loop (like the
+  // ladder's); a camera following it orbits the stairs
+  const stairsOrbit = new THREE.Object3D();
+  world.add(stairsOrbit);
+  anchors.stairsOrbit = stairsOrbit;
   satellite('wall', [33, -3.5, -13], satellitePlatform(1.5, 6, C.cream, [C.blush, C.skyBlue]), gableWall(r));
   satellite('lamp', [-27, 5, -15], satellitePlatform(1.0, 6, C.paper, [C.softYellow, C.roofBlue]), streetLamp(1.9));
   // ---- round 8: a windmill island
@@ -642,9 +665,63 @@ export function createWorld() {
     const plinth = islandPlinth(radial, 16, colors, { stand: { h: R * 0.5, ratio: 0.45 }, depthScale: 0.42 });
     return satellite(name, pos, plinth.group, content, yaw, still);
   }
-  midIsland('subway', [-5.5, -3, 12.5], 3.2,
-    { top: C.sidewalk, layers: [C.salmon, C.roofRed, C.roofBlue], tip: [C.blush, C.roofBlue] },
-    subwayEntrance(), 0.35);
+  // 在凌晨: two subway entrances floating free in the sky — no island — joined
+  // by an open switchback stair behind their dark ends: down from the top
+  // entry, round the landing, and out through the upside-down twin below.
+  // Sits higher and further from the baggage belt than the old island did,
+  // so nothing touches the conveyor.
+  const subStack = new THREE.Group();
+  {
+    const H = 3.6;                          // the drop between the two entries
+    const top = subwayEntrance();
+    top.position.y = H;
+    const under = subwayEntrance();
+    under.rotation.z = Math.PI;             // upside down: the way out, below
+    subStack.add(top, under);
+    const stepM = toon('#d9d4c7');
+    const railM = toon('#3f7a4f');
+    const zAxis = new V3(0, 0, 1);
+    const bulbM = new THREE.MeshBasicMaterial({ color: '#ffe7b0' });
+    const bulbG = new THREE.SphereGeometry(0.045, 8, 6);
+    const flight = (y0, z0, y1, z1) => {
+      for (let i = 0; i < 7; i++) {
+        const t = (i + 0.5) / 7;
+        // solid blocks: each step has real height, so the stair reads as stairs
+        const st = mesh(new THREE.BoxGeometry(1.0, 0.24, 0.3), stepM);
+        st.position.set(0, y0 + (y1 - y0) * t - 0.085, z0 + (z1 - z0) * t);
+        subStack.add(st);
+        // a small warm light on every other step, alternating sides
+        if (i % 2 === 0) {
+          const sx = (i % 4 === 0 ? 1 : -1) * 0.44;
+          const b = new THREE.Mesh(bulbG, bulbM);
+          b.position.set(sx, st.position.y + 0.17, st.position.z);
+          const gl = steadyGlow(0.9, '#ffd590', 0.55);
+          gl.position.copy(b.position);
+          subStack.add(b, gl);
+        }
+      }
+      for (const sx of [-0.52, 0.52]) {
+        const len = Math.hypot(y1 - y0, z1 - z0);
+        const rail = mesh(new THREE.BoxGeometry(0.05, 0.05, len), railM, { edges: false });
+        rail.position.set(sx, (y0 + y1) / 2 + 0.55, (z0 + z1) / 2);
+        rail.quaternion.setFromUnitVectors(zAxis, new V3(0, y1 - y0, z1 - z0).normalize());
+        subStack.add(rail);
+        for (const [py, pz] of [[y0, z0], [y1, z1]]) {   // a post at each end
+          const post = mesh(new THREE.BoxGeometry(0.05, 0.55, 0.05), railM, { edges: false });
+          post.position.set(sx, py + 0.28, pz);
+          subStack.add(post);
+        }
+      }
+    };
+    flight(H, -0.9, H / 2, -2.5);           // down from the top entry
+    flight(H / 2, -2.5, 0, -0.9);           // and back, into the twin below
+    const landing = mesh(new THREE.BoxGeometry(1.1, 0.24, 0.6), stepM);
+    landing.position.set(0, H / 2 - 0.085, -2.7);
+    const landGlow = steadyGlow(1.6, '#ffd590', 0.45);   // a lamp over the landing
+    landGlow.position.set(0, H / 2 + 0.5, -2.8);
+    subStack.add(landing, landGlow);
+  }
+  satellite('subway', [-6.5, -3.5, 15], subStack, null, 0.35);
   const busStopG = busStop(rand(61));
   midIsland('busStop', [3.5, 2.5, 13.5], 3.3,
     { top: '#bfe0a8', layers: [C.tileMint, C.softGreen, C.roofBlue], tip: [C.softYellow, C.roofBlue] },
@@ -893,8 +970,8 @@ export function createWorld() {
   world.add(clock.group);
   anchors.clock = clock.group;
 
-  // 我給的愛: fireflies round the window at the top of the ladder
-  ladder.window.add(fireflies(60, 2.4));
+  // 我給的愛: pastel fireflies round the window at the top of the ladder
+  ladder.window.add(fireflies(110, 2.6));
 
   // 一桌菜: a dining room on Taiwan's far side, looking back over the island
   const dining = diningRoom(rand(4403));
@@ -914,41 +991,148 @@ export function createWorld() {
   world.add(appleOrbit);
   anchors.appleOrbit = appleOrbit;
 
-  // 未接來電: a phone by New York, a phone by Taiwan, a coiled blue cord
-  // hanging between them across the gap (the two mobiles were removed)
-  const calls = [
-    { o: rotaryPhone(C.roofRed), at: [-9.5, 4, 10.5], kind: 'rotary' },
-    { o: rotaryPhone('#3f8fd6'), at: [10.5, 4, 10.5], kind: 'rotary' },
-  ].map((c, i) => {
-    c.o.group.scale.setScalar(1.3);
-    world.add(c.o.group);
-    return { ...c, base: new V3(...c.at), i };
-  });
-  const CORD_N = 700;
-  const cordGeo = new THREE.BufferGeometry();
-  cordGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(CORD_N * 3), 3));
-  const cord = new THREE.Line(cordGeo, new THREE.LineBasicMaterial({ color: '#2f6fd0' }));
-  cord.frustumCulled = false;
-  world.add(cord);
-  const cA = new V3(), cB = new V3(), cD = new V3(), cN1 = new V3(), cN2 = new V3(), cP = new V3();
-  function updateCord(ph) {
-    calls[0].o.handset.getWorldPosition(cA); world.worldToLocal(cA);
-    calls[1].o.handset.getWorldPosition(cB); world.worldToLocal(cB);
-    cD.subVectors(cB, cA);
-    cN1.crossVectors(cD, fUp).normalize();
-    cN2.crossVectors(cN1, cD).normalize();
-    const sag = 2.8 + 0.35 * Math.sin(TAU * ph * 2);
-    const arr = cordGeo.attributes.position.array;
-    for (let k = 0; k < CORD_N; k++) {
-      const t = k / (CORD_N - 1);
-      const a = t * TAU * 110 + TAU * ph * 4;
-      const r = 0.12 * Math.min(1, t / 0.04, (1 - t) / 0.04);
-      cP.copy(cA).addScaledVector(cD, t);
-      cP.y -= sag * Math.sin(Math.PI * t);
-      cP.addScaledVector(cN1, Math.cos(a) * r).addScaledVector(cN2, Math.sin(a) * r);
-      arr[k * 3] = cP.x; arr[k * 3 + 1] = cP.y; arr[k * 3 + 2] = cP.z;
+  // 未接來電: a retro phone booth adrift high between the islands, after a
+  // lone desert booth at night: tan aluminium frame on a concrete step, glass
+  // on all four sides over a low kick panel, a two-leaf door with a handle,
+  // a lit PHONE band round the top, a ceiling light, and a payphone inside
+  // (keypad, coin slot, coiled cord, handset on its hook, phone book shelf).
+  // It glows like a lamp left on. Paper planes circle it like the fish
+  // circle the windmill. (The two phones and their coiled cord are gone.)
+  const boothBase = new V3(8, 8.5, 9.8);
+  const booth = new THREE.Group();
+  {
+    const tan = toon('#d6c6a6');
+    const tanDark = toon('#b9a988');
+    const BW = 1.1, BH = 2.3, Y0 = 0.14;            // width, wall height, floor level
+    const glowM = (c) => new THREE.MeshBasicMaterial({ color: c });
+    const box3 = (w, h, d, m, x, y, z, edges = true) => {
+      const o = mesh(new THREE.BoxGeometry(w, h, d), m, { edges });
+      o.position.set(x, y, z); booth.add(o); return o;
+    };
+    // concrete step and the booth's own floor
+    box3(BW + 0.34, 0.1, BW + 0.34, toon('#bdb8ad'), 0, 0.05, 0);
+    box3(BW, 0.04, BW, tanDark, 0, 0.12, 0);
+    // corner posts
+    for (const sx of [-1, 1]) for (const sz of [-1, 1])
+      box3(0.075, BH, 0.075, tan, sx * (BW / 2 - 0.037), Y0 + BH / 2, sz * (BW / 2 - 0.037), false);
+    // four walls: kick panel, mid rail, top rail, glass; the front (+z) is a
+    // two-leaf door with a centre mullion and a handle
+    const glassM = new THREE.MeshBasicMaterial({ color: '#bfe8f2', transparent: true, opacity: 0.26, side: THREE.DoubleSide, depthWrite: false });
+    const walls = [[0, 1, 0], [0, -1, Math.PI], [1, 0, Math.PI / 2], [-1, 0, -Math.PI / 2]];
+    for (const [nx, nz, ry] of walls) {
+      const wall = new THREE.Group();
+      wall.position.set(nx * (BW / 2 - 0.02), 0, nz * (BW / 2 - 0.02));
+      wall.rotation.y = ry;
+      const W = BW - 0.1;
+      const kick = mesh(new THREE.BoxGeometry(W, 0.32, 0.03), tanDark, { edges: false });
+      kick.position.y = Y0 + 0.16;
+      const mid = mesh(new THREE.BoxGeometry(W, 0.05, 0.04), tan, { edges: false });
+      mid.position.y = Y0 + 1.05;
+      const topR = mesh(new THREE.BoxGeometry(W, 0.06, 0.04), tan, { edges: false });
+      topR.position.y = Y0 + BH - 0.03;
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(W, BH - 0.4), glassM);
+      pane.position.y = Y0 + 0.32 + (BH - 0.4) / 2;
+      wall.add(kick, mid, topR, pane);
+      if (nz === 1) {                                   // the door
+        const mull = mesh(new THREE.BoxGeometry(0.05, BH - 0.06, 0.04), tan, { edges: false });
+        mull.position.y = Y0 + BH / 2;
+        const handle = mesh(new THREE.BoxGeometry(0.03, 0.34, 0.03), toon('#e9e4d8'), { edges: false });
+        handle.position.set(0.09, Y0 + 1.05, 0.04);
+        wall.add(mull, handle);
+      }
+      booth.add(wall);
     }
-    cordGeo.attributes.position.needsUpdate = true;
+    // the lit band round the top, with PHONE on front and back
+    const signTex = (() => {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 48;
+      const x = c.getContext('2d');
+      x.fillStyle = '#fff6dc'; x.fillRect(0, 0, 256, 48);
+      x.fillStyle = '#3b4a6b'; x.font = 'bold 30px sans-serif';
+      x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText('PHONE', 128, 26);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    })();
+    const bandY = Y0 + BH + 0.11;
+    const bandPlain = glowM('#fff3cd');
+    const bandSign = new THREE.MeshBasicMaterial({ map: signTex });
+    // box faces: +x, -x, +y, -y, +z, -z (signs front and back)
+    const band = new THREE.Mesh(new THREE.BoxGeometry(BW + 0.04, 0.22, BW + 0.04),
+      [bandPlain, bandPlain, bandPlain, bandPlain, bandSign, bandSign]);
+    band.position.y = bandY;
+    booth.add(band);
+    box3(BW + 0.2, 0.06, BW + 0.2, tan, 0, bandY + 0.14, 0);          // cap roof, overhanging
+    box3(BW - 0.1, 0.05, BW - 0.1, tanDark, 0, bandY + 0.19, 0);      // its raised top
+    // ceiling light inside
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5), glowM('#eaf7ff'));
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.y = Y0 + BH - 0.07;
+    booth.add(ceil);
+    // the payphone, on the back wall
+    const backZ = -(BW / 2 - 0.09);
+    box3(0.3, 0.5, 0.1, toon('#3a4766'), 0.06, Y0 + 1.42, backZ);              // body
+    box3(0.22, 0.12, 0.02, glowM('#b9cde0'), 0.06, Y0 + 1.58, backZ + 0.06, false);   // instruction card
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++)                    // keypad
+      box3(0.035, 0.03, 0.015, toon('#d9dee8'), 0.02 + c * 0.045, Y0 + 1.44 - r * 0.042, backZ + 0.06, false);
+    box3(0.02, 0.06, 0.015, toon(C.ink), 0.17, Y0 + 1.5, backZ + 0.06, false); // coin slot
+    box3(0.06, 0.05, 0.03, toon('#c9cdd6'), 0.06, Y0 + 1.22, backZ + 0.05, false); // coin return
+    box3(0.05, 0.1, 0.05, toon('#c9cdd6'), -0.13, Y0 + 1.5, backZ + 0.03, false);  // hook
+    box3(0.07, 0.32, 0.07, toon(C.ink), -0.13, Y0 + 1.38, backZ + 0.07);          // handset
+    // the coiled cord from the phone to the handset
+    {
+      const pts = [];
+      const a0 = new V3(-0.05, Y0 + 1.25, backZ + 0.06), a1 = new V3(-0.13, Y0 + 1.22, backZ + 0.08);
+      for (let i = 0; i <= 120; i++) {
+        const t = i / 120, an = t * TAU * 9;
+        const pt = a0.clone().lerp(a1, t);
+        pt.y -= 0.18 * Math.sin(Math.PI * t);
+        pt.x += Math.cos(an) * 0.015; pt.z += Math.sin(an) * 0.015;
+        pts.push(pt);
+      }
+      booth.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: '#1c2233' })));
+    }
+    // a shelf with a phone book under the phone
+    box3(0.46, 0.03, 0.2, tan, 0.02, Y0 + 1.0, backZ + 0.07);
+    box3(0.26, 0.06, 0.16, toon('#e8d36a'), 0.06, Y0 + 1.05, backZ + 0.07);
+    // light: cool from the glass, warm from the band, a faint pool below
+    const gIn = steadyGlow(3.6, '#bfe9ff', 0.42); gIn.position.y = Y0 + 1.2;
+    const gTop = steadyGlow(2.2, '#ffe9b0', 0.5); gTop.position.y = bandY;
+    const gLow = steadyGlow(2.0, '#cfe9ff', 0.22); gLow.position.y = 0.1;
+    booth.add(gIn, gTop, gLow);
+  }
+  booth.position.copy(boothBase);
+  world.add(booth);
+  anchors.booth = booth;
+  // the paper planes: a simple paper fold (two wings meeting on a centre
+  // crease, a little keel underneath), in soft paper colors. They fly as
+  // one ring orbiting the booth — all the same way, evenly spaced, a lap
+  // every 15 s, at staggered heights, banking into the turn.
+  const paperPlanes = [];
+  {
+    const planeGeo = (() => {
+      const N = [0, 0, 0.26], T = [0, 0, -0.2], K = [0, -0.06, -0.18];
+      const v = [];
+      const tri = (a, b, c) => v.push(...a, ...b, ...c);
+      tri(N, T, K);                                               // keel
+      for (const sd of [-1, 1]) tri(N, T, [sd * 0.2, 0.04, -0.2]); // the two wings
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+      g.computeVertexNormals();
+      return g;
+    })();
+    const papers = ['#fbf9f2', '#f9dce3', '#dceaf7', '#f8efc9', '#e6f2e2', '#f7f1e2', '#efe2f6', '#fbf9f2'];
+    const N_PLANES = 8;
+    for (let i = 0; i < N_PLANES; i++) {
+      const g = new THREE.Group();
+      g.add(mesh(planeGeo, toon(papers[i % papers.length], { doubleSided: true })));
+      g.scale.setScalar(1.15);
+      world.add(g);
+      paperPlanes.push({
+        g, r: 2.1 + 0.25 * Math.sin(i * 2.4),           // one ring, gently uneven
+        h0: 0.6 + (i % 4) * 0.55,                       // staggered heights up the booth
+        ph0: i / N_PLANES,                              // evenly spaced round the ring
+        bob: 0.18,
+      });
+    }
   }
 
   // ---------------------------------------------------- flying houses
@@ -984,6 +1168,57 @@ export function createWorld() {
     });
   }
 
+  // Keep every drifting house out of the two rooms on Taiwan's edge (不想去遠方's
+  // lookout and 一桌菜's dining room): one that would drift through a room is
+  // moved straight away from it, just far enough. (Done after the houses are
+  // placed, so all the other houses stay exactly where they were.)
+  {
+    const rooms = [lookout.group, dining.group].map((g) => {
+      tw.root.updateWorldMatrix(true, true);
+      return g.getWorldPosition(new V3());
+    });
+    const ROOM_R = 3.2;
+    for (const sh of ships) {
+      const reach = Math.max(sh.amp.x, sh.amp.z) + sh.sc * 1.2;
+      for (const r of rooms) {
+        if (Math.abs(sh.base.y - r.y) > 4 + sh.amp.y + sh.sc) continue;
+        const dx = sh.base.x - r.x, dz = sh.base.z - r.z, d = Math.hypot(dx, dz);
+        const need = ROOM_R + reach;
+        if (d < need) {
+          const ux = d > 1e-3 ? dx / d : 1, uz = d > 1e-3 ? dz / d : 0;
+          sh.base.x = r.x + ux * need; sh.base.z = r.z + uz * need;
+        }
+      }
+    }
+  }
+  // ...and clear of the phone booth and the paper planes round it (未接來電)
+  for (const sh of ships) {
+    const reach = Math.max(sh.amp.x, sh.amp.z) + sh.sc * 1.2;
+    if (Math.abs(sh.base.y - boothBase.y) > 4.5 + sh.amp.y + sh.sc) continue;
+    const dx = sh.base.x - boothBase.x, dz = sh.base.z - boothBase.z, d = Math.hypot(dx, dz);
+    const need = 3.6 + reach;
+    if (d < need) {
+      const ux = d > 1e-3 ? dx / d : 1, uz = d > 1e-3 ? dz / d : 0;
+      sh.base.x = boothBase.x + ux * need; sh.base.z = boothBase.z + uz * need;
+    }
+  }
+  // ...and out of the circle the floating bridge sweeps when it turns (浪流連)
+  {
+    const mid = bridgeSpin.position.clone().applyAxisAngle(new V3(0, 1, 0), 0.12)
+      .add(bridgeBase).addScaledVector(bridgeAwayDir, BRIDGE_AWAY);
+    const SWEEP_R = bridgeSpin.position.x + 0.8;
+    for (const sh of ships) {
+      const reach = Math.max(sh.amp.x, sh.amp.z) + sh.sc * 1.2;
+      if (Math.abs(sh.base.y - mid.y) > 4 + sh.amp.y + sh.sc) continue;
+      const dx = sh.base.x - mid.x, dz = sh.base.z - mid.z, d = Math.hypot(dx, dz);
+      const need = SWEEP_R + reach;
+      if (d < need) {
+        const ux = d > 1e-3 ? dx / d : 1, uz = d > 1e-3 ? dz / d : 0;
+        sh.base.x = mid.x + ux * need; sh.base.z = mid.z + uz * need;
+      }
+    }
+  }
+
   // ---------------------------------------------------- airplane
   const plane = airplane();
   plane.scale.setScalar(1.15);
@@ -1017,7 +1252,7 @@ export function createWorld() {
   mtn.peaks.forEach(m => scatter.add(m, 'fragment', { outward: m.position }));
   twPoles.forEach(p => scatter.add(p.group, 'part'));
   for (const t of towers) { scatter.add(t, 'house', { outward: t.position }); scatter.addParts(t); }
-  scatter.add(bridge.group, 'satellite', { dynamic: true });
+  scatter.add(bridgeRoot, 'satellite', { dynamic: true });
   scatter.addParts(bridge.group);
   for (const t of taxis) scatter.add(t.g, 'fragment', { dynamic: true });
   for (const sh of ships) {
@@ -1041,6 +1276,7 @@ export function createWorld() {
   function update({
     loopT, nowSec, dt, angle, floatI, houseCount,
     showMain, showSatellites, airplaneVisible, presetId = '', breathe = 1,
+    bridgeLights = false, bridgeSpin: spinOn = false,
   }) {
     const ph = loopT / LOOP_SECONDS;
     const a = Math.min(floatI, 1.5);                       // gentle floating amount
@@ -1219,18 +1455,34 @@ export function createWorld() {
     scatter.apply(ladder.group);
     ladderOrbit.position.copy(ladder.group.position);
     ladderOrbit.rotation.set(0, -TAU * ph, 0);   // one slow circle per 2-minute loop
+    stairsOrbit.position.copy(stairsSat.g.position);
+    stairsOrbit.rotation.set(0, -TAU * ph, 0);   // same slow circle, round the stairs
 
     // lighthouse: one sweep every 15 s, with small hesitations and a slow
     // up/down tilt — it is looking for something
     lh.pivot.rotation.set(0, TAU * ph * 8 + 0.25 * Math.sin(TAU * ph * 24), 0.07 * Math.sin(TAU * ph * 5));
 
 
-    // the floating bridge: a slow bob and sway
-    bridge.group.visible = showSatellites;
-    bridge.group.position.copy(bridgeBase);
-    bridge.group.position.y += Math.sin(TAU * (ph * 2 + 0.15)) * 0.35 * Math.max(0.4, a);
-    bridge.group.rotation.set(Math.sin(TAU * (ph + 0.4)) * 0.02, 0.12 + Math.sin(TAU * ph) * 0.06, Math.sin(TAU * (ph * 2 + 0.7)) * 0.015);
-    scatter.apply(bridge.group);
+    // the floating bridge: its lights fade in over ~2 s; the spin speeds up /
+    // slows down over ~3 s (one turn every 40 s), and when it stops it
+    // settles back home the short way
+    bridgeLit += ((bridgeLights ? 1 : 0) - bridgeLit) * (1 - Math.exp(-dt * 1.5));
+    bridge.setLights(bridgeLit, nowSec);
+    bridgeTurn += ((spinOn ? 1 : 0) - bridgeTurn) * (1 - Math.exp(-dt * 0.8));
+    if (spinOn || bridgeTurn > 0.02) bridgeYaw += dt * bridgeTurn * TAU / 40;
+    else {
+      bridgeYaw = (((bridgeYaw + Math.PI) % TAU) + TAU) % TAU - Math.PI;
+      bridgeYaw *= Math.exp(-dt * 1.2);
+    }
+    bridgeSpin.rotation.y = bridgeYaw;
+    // out of New York's way while turned (and until it is home again)
+    const away = Math.max(bridgeTurn, Math.min(1, Math.abs(bridgeYaw) / 0.3));
+    // a slow bob and sway
+    bridgeRoot.visible = showSatellites;
+    bridgeRoot.position.copy(bridgeBase).addScaledVector(bridgeAwayDir, BRIDGE_AWAY * away);
+    bridgeRoot.position.y += Math.sin(TAU * (ph * 2 + 0.15)) * 0.35 * Math.max(0.4, a);
+    bridgeRoot.rotation.set(Math.sin(TAU * (ph + 0.4)) * 0.02, 0.12 + Math.sin(TAU * ph) * 0.06, Math.sin(TAU * (ph * 2 + 0.7)) * 0.015);
+    scatter.apply(bridgeRoot);
 
     // ---- round 8
     apple.visible = board.visible = showSatellites;
@@ -1251,36 +1503,39 @@ export function createWorld() {
     });
     clock.group.visible = showSatellites;
     clock.group.position.copy(clockBase);
-    clock.group.position.y += Math.sin(TAU * ph * 2) * 0.4;
-    clock.group.rotation.set(Math.sin(TAU * (ph + 0.2)) * 0.05, -0.35 + Math.sin(TAU * ph) * 0.12, Math.sin(TAU * ph * 3) * 0.04);
-    // time runs fast: the minute hand goes round every 10 s, the second
-    // hand whirls, and the face breathes, a little out of shape
-    clock.minute.rotation.z = -TAU * ph * 12;
+    clock.group.position.y += Math.sin(TAU * ph) * 0.4;
+    clock.group.rotation.set(Math.sin(TAU * (ph + 0.2)) * 0.05, -0.35 + Math.sin(TAU * ph) * 0.12, Math.sin(TAU * ph * 2) * 0.04);
+    // time runs fast (but half what it was): the minute hand goes round
+    // every 20 s, the second hand whirls, the face breathes a little
+    clock.minute.rotation.z = -TAU * ph * 6;
     clock.hour.rotation.z = -TAU * ph - 1.2;
-    clock.second.rotation.z = -TAU * ph * 60;
-    const cb = Math.sin(TAU * ph * 4);
+    clock.second.rotation.z = -TAU * ph * 30;
+    const cb = Math.sin(TAU * ph * 2);
     clock.body.scale.set(1 + 0.05 * cb, 1 - 0.04 * cb, 1);
-    clock.body.rotation.z = Math.sin(TAU * ph * 2) * 0.08;
+    clock.body.rotation.z = Math.sin(TAU * ph) * 0.08;
     dining.group.visible = presetId === 'dining';
     if (dining.group.visible) animateSteam(dining.steam, ph);
     animateLaundry(laundry.items, ph);
     appleOrbit.position.copy(apple.position);
     appleOrbit.rotation.set(0, -TAU * ph, 0);
-    calls.forEach(c => {
-      const g = c.o.group;
-      g.visible = showSatellites;
-      g.position.copy(c.base);
-      g.position.y += Math.sin(TAU * (ph * 2 + c.i * 0.17)) * 0.5;
-      const turn = c.kind === 'rotary' ? (c.i ? -2.4 : 2.4) + Math.sin(TAU * ph) * 0.3 : TAU * ph * (c.i % 2 ? 1 : -1) + c.i;   // the phones face each other
-      g.rotation.set(Math.sin(TAU * (ph + c.i * 0.3)) * 0.15, turn, Math.sin(TAU * (ph * 2 + c.i * 0.2)) * 0.12);
-      // ringing: every 15 s the mobile's screen lights up for a few seconds
-      // (no shaking or buzzing: the phones just float)
-      const ring = ((ph * 8 + c.i * 0.13) % 1) < 0.25;
-      if (c.kind === 'rotary') c.o.handset.position.y = 0.55;
-      if (c.kind === 'mobile') c.o.screen.material.color.set(ring ? '#ffffff' : '#9fd3ea');
-    });
-    cord.visible = showSatellites;
-    if (showSatellites) { world.updateMatrixWorld(); updateCord(ph); }
+    // the phone booth bobs gently; its paper planes circle it
+    booth.visible = showSatellites;
+    booth.position.copy(boothBase);
+    booth.position.y += Math.sin(TAU * (ph * 2 + 0.3)) * 0.3 * Math.max(0.4, a);
+    booth.rotation.set(Math.sin(TAU * (ph + 0.5)) * 0.03, -0.5 + Math.sin(TAU * ph) * 0.06, Math.sin(TAU * (ph * 2 + 0.1)) * 0.02);
+    for (const pp of paperPlanes) {
+      pp.g.visible = showSatellites;
+      const an = TAU * (ph * 8 + pp.ph0);              // 8 laps per loop: one every 15 s
+      pp.g.position.set(
+        booth.position.x + Math.cos(an) * pp.r,
+        booth.position.y + pp.h0 + Math.sin(TAU * (ph * 16 + pp.ph0 * 2)) * pp.bob,
+        booth.position.z + Math.sin(an) * pp.r);
+      // nose along the circle, banked in toward the booth, nose bobbing with the climb
+      pp.g.rotation.set(
+        -Math.cos(TAU * (ph * 16 + pp.ph0 * 2)) * 0.15,
+        Math.atan2(-Math.sin(an), Math.cos(an)),
+        0.35, 'YXZ');
+    }
 
     // ---- song scenes
     lookout.group.visible = presetId === 'lookout';
@@ -1295,6 +1550,17 @@ export function createWorld() {
     bath.group.rotation.z = Math.sin(TAU * (ph + 0.2)) * 0.02;
     bath.duck.position.y = 0.76 + Math.sin(TAU * ph * 12) * 0.015;
     bath.duck.rotation.y = Math.sin(TAU * ph * 3) * 0.4;
+    if (bath.group.visible) {
+      // subtle flicker: a faint shimmer, and now and then a quick dip
+      // (a few times a minute) like an old bulb
+      const tf = nowSec;
+      let fl = 1 - 0.05 * (0.5 + 0.5 * Math.sin(tf * 17.3) * Math.sin(tf * 5.1 + 1.3));
+      const slot = Math.floor(tf * 8);
+      const hsh = Math.abs(Math.sin(slot * 12.9898) * 43758.5453) % 1;
+      if (hsh > 0.975) fl *= 0.55 + 0.25 * Math.abs(Math.sin(slot * 7.1));
+      bath.lamp.bulb.material.color.copy(bath.lamp.baseColor).multiplyScalar(0.55 + 0.45 * fl);
+      bath.lamp.glow.userData.flicker = fl;
+    }
 
     pairPos(ph, ppA); pairPos(ph + 0.002, ppB);
     pairAnchor.position.copy(ppA);

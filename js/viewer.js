@@ -13,6 +13,7 @@ import { createBirds } from './birds.js';
 import { createCameraRig } from './camera.js';
 import { createFreecam } from './freecam.js'; // TEMP free camera
 import { presetById, isView } from './presets.js';
+import { SONG_SCENES } from './songs.js';
 import { LAMP_HALOS } from './architecture.js';
 
 THREE.ColorManagement.enabled = false; // treat every hex color as-is, like ink on paper
@@ -33,6 +34,54 @@ stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1200);
+
+// ---- arrival dissolve: everything in the world can dissolve, in a fine dot
+// pattern, where it stands nearer the camera than CLIP.z.value. The camera
+// rig fades this in as it arrives at a close-up, so what stands in front of
+// the window melts away instead of vanishing at the last moment. With an
+// orthographic camera the depth buffer is linear, so no extra data is needed.
+const CLIP = { z: { value: 0 }, fade: { value: 0 } };
+const CLIP_HEAD = `
+uniform float uClipZ;
+uniform float uClipFade;
+float clipB2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
+float clipB4(vec2 a) { return clipB2(0.5 * a) * 0.25 + clipB2(a); }
+`;
+const CLIP_TEST = `
+  if (uClipFade > 0.0) {
+    float clipDepth = mix(${camera.near.toFixed(3)}, ${camera.far.toFixed(1)}, gl_FragCoord.z);
+    if (clipDepth < uClipZ && clipB4(floor(gl_FragCoord.xy / 2.0)) < uClipFade) discard;
+  }
+`;
+const clipInject = (src) => src.replace(/void\s+main\s*\(\s*\)\s*\{/, (m) => CLIP_HEAD + m + CLIP_TEST);
+const clipDone = new WeakSet();
+function addClip(mat) {
+  if (!mat || clipDone.has(mat)) return;
+  clipDone.add(mat);
+  if (mat.isShaderMaterial) {
+    if (!/void\s+main/.test(mat.fragmentShader)) return;
+    mat.fragmentShader = clipInject(mat.fragmentShader);
+    mat.uniforms.uClipZ = CLIP.z;
+    mat.uniforms.uClipFade = CLIP.fade;
+  } else {
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (shader, r) => {
+      if (prev) prev.call(mat, shader, r);
+      shader.uniforms.uClipZ = CLIP.z;
+      shader.uniforms.uClipFade = CLIP.fade;
+      shader.fragmentShader = clipInject(shader.fragmentShader);
+    };
+    const key = mat.customProgramCacheKey?.bind(mat);
+    mat.customProgramCacheKey = () => (key ? key() : '') + '|clip';
+  }
+  mat.needsUpdate = true;
+}
+function clipAll() {
+  scene.traverse((o) => {
+    if (!o.material) return;
+    if (Array.isArray(o.material)) o.material.forEach(addClip); else addClip(o.material);
+  });
+}
 const rt = new THREE.WebGLRenderTarget(4, 4, { samples: 4 });
 
 shared.uAtlas.value = makeMemoryAtlas();
@@ -46,7 +95,7 @@ const clouds = createClouds();
 scene.add(clouds.group);
 const birds = createBirds();
 scene.add(birds.group);
-const rig = createCameraRig(camera, world.anchors, world.group);   // world.group: what close-ups check for things in the way
+const rig = createCameraRig(camera, world.anchors);
 const freecam = createFreecam(renderer.domElement, camera, () => rig.pose.target); // TEMP free camera
 
 // ------------------------------------------------------------- post pass
@@ -80,6 +129,7 @@ const post = new THREE.ShaderMaterial({
     uRipple: { value: 0 },                      // water-ripple distortion
     uPunch: { value: 1 },                       // contrast + saturation together (1 = as drawn)
     uSkyDim: { value: 0 },                      // darkens the sky only, never the world's light
+    uDream: { value: 0 },                       // dream glass: blur + glow, a fogged window
     uNightA: shared.uNightA,
     uNightB: shared.uNightB,
     uWashK: { value: new THREE.Vector2() },     // how much each side's hour colors the sky
@@ -100,7 +150,7 @@ const post = new THREE.ShaderMaterial({
     uniform float uPx;
     uniform vec3 uTop, uMid, uBot;
     uniform float uTime, uLoop, uGrain, uFrame, uHalftone;
-    uniform float uRipple, uPunch, uSkyDim;
+    uniform float uRipple, uPunch, uSkyDim, uDream;
     uniform float uTz, uGlowR, uAir, uBlack, uNightA, uNightB, uSplit, uLeftA, uSunRA;
     uniform vec2 uWashK, uSunUvA, uSunUvB, uMoonUvA, uMoonUvB, uSunAmt, uMoonAmt;
     uniform vec2 uGlowA, uGlowB;
@@ -281,8 +331,74 @@ const post = new THREE.ShaderMaterial({
 
       vec4 s = texture2D(tScene, uv);
 
+      // sky dimmer: keep the world readable against the darkened backdrop.
+      // The darkest colors get a gentle lift, as if everything held a faint
+      // inner light — black stays dark, just never swallowed.
+      if (uSkyDim > 0.001 && s.a > 0.001) {
+        vec3 c = s.rgb / s.a;
+        float sl = dot(c, vec3(0.299, 0.587, 0.114));
+        c += (1.0 - smoothstep(0.0, 0.75, sl)) * uSkyDim * (0.3 * c + 0.12);
+        s.rgb = c * s.a;
+      }
+
       vec3 ground = sky(uv) * (1.0 - uSkyDim);   // sky dimmer: background only
       vec3 col = ground * (1.0 - s.a) + s.rgb;   // scene is premultiplied
+      // ...and the world's light bleeds softly onto the dark sky around it
+      if (uSkyDim > 0.01) {
+        vec2 gpv = (6.0 * uRes.y / 1080.0) / uRes;
+        vec4 nb = vec4(0.0);
+        for (int i = 0; i < 8; i++) {
+          float an = TAU * (float(i) + 0.5) / 8.0;
+          nb += texture2D(tScene, uv + vec2(cos(an), sin(an)) * gpv);
+        }
+        nb /= 8.0;
+        col += nb.rgb * max(0.0, nb.a - s.a) * 0.4 * uSkyDim;
+      }
+
+      // dream glass: the world as if through fogged or wet glass — a soft
+      // blur, and the bright parts bleeding a gentle glow. The sky gradient
+      // stays smooth underneath; grain stays crisp on top, like the glass.
+      if (uDream > 0.001) {
+        // Soft blur: 32 taps on a golden-angle spiral, gaussian-weighted and
+        // turned a little per pixel, so there are no rings or steps — just
+        // an even, creamy softness.
+        float rpx = (2.5 + 6.0 * uDream) * uRes.y / 1080.0;
+        vec2 px = rpx / uRes;
+        float rot = hash(gl_FragCoord.xy) * TAU;
+        vec4 b = vec4(0.0);
+        float wsum = 0.0;
+        for (int i = 0; i < 32; i++) {
+          float fi = float(i) + 0.5;
+          float r = sqrt(fi / 32.0);
+          float an = fi * 2.39996323 + rot;
+          float w = exp(-r * r * 2.2);
+          b += texture2D(tScene, uv + vec2(cos(an), sin(an)) * r * px * 1.6) * w;
+          wsum += w;
+        }
+        b /= wsum;
+        vec3 colB = ground * (1.0 - b.a) + b.rgb;
+        // Wide halo: a second, much larger and fainter pass — the glow light
+        // gets in fogged glass. Only the brighter parts feed it.
+        vec4 h = vec4(0.0);
+        float hsum = 0.0;
+        for (int i = 0; i < 16; i++) {
+          float fi = float(i) + 0.5;
+          float r = sqrt(fi / 16.0);
+          float an = fi * 2.39996323 - rot;
+          float w = exp(-r * r * 1.5);
+          h += texture2D(tScene, uv + vec2(cos(an), sin(an)) * r * px * 6.0) * w;
+          hsum += w;
+        }
+        h /= hsum;
+        vec3 colH = ground * (1.0 - h.a) + h.rgb;
+        float lh = dot(colH, vec3(0.299, 0.587, 0.114));
+        // blend: sharp → soft, then the halo screened on (never clips harsh)
+        col = mix(col, colB, smoothstep(0.0, 1.0, uDream) * 0.75);
+        vec3 glow = colH * smoothstep(0.25, 0.95, lh) * 0.45 * uDream;
+        col = 1.0 - (1.0 - col) * (1.0 - glow);
+        // a whisper of milkiness, like condensation catching the light
+        col = mix(col, col * 0.92 + 0.08 * colH, 0.5 * uDream);
+      }
       if (uAir > 0.001) col = mix(col, airplaneWindow(col, vUv), uAir);
 
       float n1 = hash(fc) - 0.5;
@@ -345,6 +461,7 @@ resize();
 // ------------------------------------------------------------- state
 
 let target = loadState();
+let autoOrb = 0, autoOrbSpeed = 0;   // auto orbit: extra turn (deg) and its eased speed
 // ?preset=taiwan starts on a camera preset (handy for recording / checking views)
 if (params.get('preset')) {
   const p = presetById(params.get('preset'));
@@ -362,7 +479,7 @@ const EASED = [
   'rotationSpeed', 'floatIntensity', 'birdSpeed', 'zoom', 'cameraAngle', 'cameraOrbit',
   'cameraPanX', 'cameraPanY', 'cameraPanZ',
   'windowLight', 'clouds', 'cloudDensity', 'cloudOpacity', 'cloudDrift', 'cloudSoftness',
-  'halftone', 'grain', 'timezone', 'darkness', 'split', 'rain', 'snow',
+  'halftone', 'grain', 'timezone', 'darkness', 'split', 'rain', 'snow', 'dream',
 ];
 // what the camera is following: a song's saved view, or else a preset
 const specOf = (st) => (isView(st.customView) ? st.customView : presetById(st.cameraPreset));
@@ -436,13 +553,35 @@ function applyState(s, ease) {
     // the rig interpolates zoom/angle itself during a transition
     cur.zoom = target.zoom; cur.cameraAngle = target.cameraAngle; cur.cameraOrbit = target.cameraOrbit;
     cur.cameraPanX = target.cameraPanX; cur.cameraPanY = target.cameraPanY; cur.cameraPanZ = target.cameraPanZ;
+    autoOrb = 0;       // the move to the new view absorbs any auto-orbit turn
     freecam.reset();   // a new cue starts clean, so saved song views land exactly
   }
   if (ease) {
-    // atmosphere changes from a scene take exactly as long as the camera move
+    // A song change: sky, hour, light and effects all travel together on one
+    // slow, eased timeline (soft start, soft landing), at least as long as
+    // the camera move and never shorter than ~6 s — so nothing pops.
     const p = specOf(target);
-    easeBoostUntil = nowSec + Math.max(0.5, target.transition * (p.durationScale || 1));
+    const camDur = rig.transitioning ? rig.endTime - nowSec : target.transition * (p.durationScale || 1);
+    startAtmo(nowSec, Math.max(ATMO_MIN, camDur * 1.25));
   }
+}
+
+// ---- the atmosphere timeline (song changes)
+const ATMO_MIN = 6;
+const ATMO_KEYS = EASED.filter(k => k !== 'floatIntensity' && k !== 'zoom' && !k.startsWith('camera'));
+let atmo = null;
+// camera pan left/right, in screen widths: a soft spring, so a press starts
+// slowly, glides, and settles without a bump
+let panS = target.panScreen || 0, panV = 0;
+const panRight = new THREE.Vector3(), panInvQ = new THREE.Quaternion();
+const mixL = (a, b, u) => ({ e: a.e + (b.e - a.e) * u, night: a.night + (b.night - a.night) * u, golden: a.golden + (b.golden - a.golden) * u });
+function startAtmo(nowSec, dur) {
+  atmo = {
+    start: nowSec, dur,
+    from: Object.fromEntries(ATMO_KEYS.map(k => [k, cur[k]])),
+    col: Object.fromEntries(COLORS.map(k => [k, cur[k].clone()])),
+    hour, LA: { ...LA }, LB: { ...LB },
+  };
 }
 
 // ------------------------------------------------------------- sync
@@ -545,6 +684,8 @@ function captureView() {
   Object.assign(target, { customView: view, zoom: view.zoom, cameraAngle: view.elevation, cameraOrbit: 0,
     cameraPanX: 0, cameraPanY: 0, cameraPanZ: 0 });
   for (const k of ['zoom', 'cameraAngle', 'cameraOrbit', 'cameraPanX', 'cameraPanY', 'cameraPanZ']) cur[k] = target[k];
+  autoOrb = 0;       // the saved view already holds where the auto orbit had turned to
+  target.panScreen = 0; panS = 0; panV = 0;   // ...and the left/right pan
   freecam.reset();
   rig.jump(view);
   return view;
@@ -578,7 +719,7 @@ const viewDir = new THREE.Vector3();
 
 let last = performance.now();
 let frame = 0;
-function tick(now) {
+function drawFrame(now) {
   const nowSec = now / 1000;
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));   // the first frame can arrive "before" start
   const clockDt = Math.max(0, Math.min(3600, (now - last) / 1000));   // real time, for the loop clock
@@ -586,16 +727,18 @@ function tick(now) {
   fps += ((dt > 0 ? 1 / dt : 60) - fps) * 0.05;
   frame++;
 
-  // ease every continuous parameter toward its target
-  // During a song change, everything (sky, hour, light, effects) moves at a
-  // steady pace and lands together with the camera, instead of jumping most
-  // of the way in the first second.
-  // a big camera turn takes longer; the sky and light stretch to match it
-  if (nowSec < easeBoostUntil && rig.transitioning) easeBoostUntil = Math.max(easeBoostUntil, rig.endTime);
-  const k = nowSec < easeBoostUntil
-    ? Math.min(1, dt / Math.max(dt, easeBoostUntil - nowSec))
-    : 1 - Math.exp(-dt * 2.4);
+  // ease every continuous parameter toward its target. Outside a song
+  // change, things glide there exponentially (slider moves feel live).
+  // During a song change, the atmosphere timeline below drives them instead.
+  const k = 1 - Math.exp(-dt * 2.4);
   const kCam = 1 - Math.exp(-dt * 2.4);
+  // where the song-change timeline is: 0..1, smootherstep (no sudden start or stop)
+  let atmoE = -1;
+  if (atmo) {
+    const u = Math.min(1, (nowSec - atmo.start) / atmo.dur);
+    atmoE = u * u * u * (u * (u * 6 - 15) + 10);
+    if (u >= 1) atmo = null;
+  }
   if (target.floatIntensity !== floatAnim.to) {
     floatAnim.from = cur.floatIntensity;
     floatAnim.to = target.floatIntensity;
@@ -610,18 +753,40 @@ function tick(now) {
   for (const key of EASED) {
     // floating / displacement drifts apart and back together over ~3 s
     if (key === 'floatIntensity') continue;   // its own steady animation, below
-    const kk = (key === 'zoom' || key.startsWith('camera')) ? kCam : k;
+    const isCam = key === 'zoom' || key.startsWith('camera');
+    if (atmoE >= 0 && !isCam) { cur[key] = atmo ? atmoFrom(key) : target[key]; continue; }
+    const kk = isCam ? kCam : k;
     if (key === 'zoom') cur.zoom = Math.exp(Math.log(cur.zoom) + (Math.log(target.zoom) - Math.log(cur.zoom)) * kk);
     else cur[key] += (target[key] - cur[key]) * kk;
     // land exactly on the target, so e.g. scattered objects return precisely home
     if (Math.abs(target[key] - cur[key]) < 1e-4) cur[key] = target[key];
   }
-  for (const key of COLORS) cur[key].lerp(tmpColor.set(target[key]), k);
-  // the clock: ease the shorter way round (23:00 -> 00:00 moves forward)
-  hour += ((((target.twHour - hour) % 24) + 36) % 24 - 12) * k;
-  hour = ((hour % 24) + 24) % 24;
-  LB = lightAt(hour);                                   // Taiwan
-  LA = lightAt(hour + 12);                              // New York, always 12 h apart
+  function atmoFrom(key) { return atmo.from[key] + (target[key] - atmo.from[key]) * atmoE; }
+  const hourDelta = (a, b) => ((((b - a) % 24) + 36) % 24 - 12);   // the shorter way round
+  if (atmoE >= 0) {
+    // song change: sky colors crossfade, and the light crossfades straight
+    // from the old hour's look to the new one — it doesn't race through
+    // every hour in between (no flash of sunset on the way to night)
+    for (const key of COLORS) {
+      if (atmo) cur[key].copy(atmo.col[key]).lerp(tmpColor.set(target[key]), atmoE);
+      else cur[key].set(target[key]);
+    }
+    if (atmo) {
+      hour = atmo.hour + hourDelta(atmo.hour, target.twHour) * atmoE;
+      LB = mixL(atmo.LB, lightAt(target.twHour), atmoE);          // Taiwan
+      LA = mixL(atmo.LA, lightAt(target.twHour + 12), atmoE);     // New York
+    } else {
+      hour = target.twHour; LB = lightAt(hour); LA = lightAt(hour + 12);
+    }
+    hour = ((hour % 24) + 24) % 24;
+  } else {
+    for (const key of COLORS) cur[key].lerp(tmpColor.set(target[key]), k);
+    // the clock: ease the shorter way round (23:00 -> 00:00 moves forward)
+    hour += hourDelta(hour, target.twHour) * k;
+    hour = ((hour % 24) + 24) % 24;
+    LB = lightAt(hour);                                   // Taiwan
+    LA = lightAt(hour + 12);                              // New York, always 12 h apart
+  }
   paint(LA, tzCur.A);
   paint(LB, tzCur.B);
   shared.uNightA.value = LA.night * cur.darkness;
@@ -648,8 +813,32 @@ function tick(now) {
   breath += ((target.breatheOn ? 1 : 0) - breath) * (1 - Math.exp(-dt * 0.9));
   if (Math.abs((target.breatheOn ? 1 : 0) - breath) < 1e-3) breath = target.breatheOn ? 1 : 0;
 
-  const elevation = cur.cameraAngle, zoom = cur.zoom, orbit = cur.cameraOrbit;
+  // auto orbit: the camera keeps circling, one turn a minute; it eases in and
+  // out over ~2 s, and stays wherever it was when switched off
+  autoOrbSpeed += ((target.autoOrbit ? 1 : 0) - autoOrbSpeed) * (1 - Math.exp(-dt * 1.5));
+  if (!target.autoOrbit && autoOrbSpeed < 1e-3) autoOrbSpeed = 0;
+  autoOrb = (autoOrb + dt * autoOrbSpeed * 6) % 360;
+  const elevation = cur.cameraAngle, zoom = cur.zoom, orbit = cur.cameraOrbit + autoOrb;
   const pan = camPan.set(cur.cameraPanX, cur.cameraPanY, cur.cameraPanZ);
+  // pan left/right: a critically damped spring toward the target (≈2.5 s,
+  // soft start and soft stop), then shifted along the screen's own
+  // left-right, so it follows the camera even while it orbits
+  {
+    const w = 2.2, goal = target.panScreen || 0;
+    panV += ((goal - panS) * w * w - 2 * w * panV) * dt;
+    panS += panV * dt;
+    if (Math.abs(goal - panS) < 1e-4 && Math.abs(panV) < 1e-4) { panS = goal; panV = 0; }
+    if (panS !== 0) {
+      camera.getWorldDirection(panRight);
+      panRight.set(-panRight.z, 0, panRight.x);           // horizontal, to the screen's right
+      if (panRight.lengthSq() > 1e-6) {
+        panRight.normalize();
+        panRight.applyQuaternion(panInvQ.copy(rig.frameQuat).invert());   // into the view's frame
+        const width = (camera.right - camera.left) / camera.zoom;
+        pan.addScaledVector(panRight, panS * width);
+      }
+    }
+  }
 
   // ---- shared uniforms
   shared.uTime.value = loopT;
@@ -666,8 +855,11 @@ function tick(now) {
     floatI: cur.floatIntensity, houseCount: target.houseCount,
     showMain: target.showMain, showSatellites: target.showSatellites,
     airplaneVisible: target.airplane && air < 0.5,
-    presetId: rig.preset.scene || rig.preset.id,
+    // a saved view names its room in scene; a built-in room camera says scene: true
+    presetId: (typeof rig.preset.scene === 'string' && rig.preset.scene) || rig.preset.id,
     breathe: breath,
+    bridgeLights: !!SONG_SCENES[target.activeSong]?.bridge?.lights,
+    bridgeSpin: !!SONG_SCENES[target.activeSong]?.bridge?.spin,
   });
   // weather switches fade in and out over about a second
   // weather switches: rain and snow build up and die away over about 4 s
@@ -683,6 +875,9 @@ function tick(now) {
 
   // ---- camera
   rig.update(nowSec, elevation, zoom, orbit, pan);
+  CLIP.z.value = rig.clip.z;
+  CLIP.fade.value = rig.clip.fade;
+  if (frame % 60 === 1) clipAll();   // new objects get the dissolve too
   freecam.apply(); // TEMP free camera
   camera.updateMatrixWorld();
   camera.getWorldDirection(viewDir);
@@ -755,13 +950,14 @@ function tick(now) {
   post.uniforms.uRipple.value = ripple;
   post.uniforms.uPunch.value = cur.contrast;
   post.uniforms.uSkyDim.value = cur.skyDim;
+  post.uniforms.uDream.value = cur.dream;
 
   // street lamps glow with the night on their side of the world
   for (const h of LAMP_HALOS) {
     h.getWorldPosition(haloPos);
     const w = fall(WORLD.tzBlend[0], WORLD.tzBlend[1], haloPos.x);
     const n = shared.uNightA.value + (shared.uNightB.value - shared.uNightA.value) * w;
-    h.material.opacity = Math.min(0.5, n * 0.5);   // kept soft: many glows overlap
+    h.material.opacity = Math.min(0.5, n * 0.5) * (h.userData.flicker ?? 1);   // kept soft: many glows overlap
     h.visible = n > 0.02;
   }
   toUv(proj.copy(nyCenter).add(new THREE.Vector3(0, -3, 0)), post.uniforms.uGlowA.value);
@@ -778,8 +974,17 @@ function tick(now) {
   renderer.render(scene, camera);
   renderer.setRenderTarget(null);
   renderer.render(postScene, postCam);
-
+}
+// The next frame is always asked for first, so an error in one frame skips
+// that frame instead of freezing the projection.
+let frameErrors = 0;
+function tick(now) {
   requestAnimationFrame(tick);
+  try {
+    drawFrame(now);
+  } catch (err) {
+    if (frameErrors++ < 3) console.error('frame skipped:', err);
+  }
 }
 requestAnimationFrame(tick);
 

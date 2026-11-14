@@ -15,6 +15,8 @@
 //   sky            optional ['#top', '#middle', '#bottom'] sky colors (overrides atmosphere)
 //   float          floating / displacement intensity (0–1 floats, 1–5 comes apart)
 //   birds          optional { count, speed }
+//   bridge         optional { lights: true, spin: true } — the floating bridge
+//                  in New York lights up / slowly turns around its window
 //   effects        optional state overrides, e.g. { timezone, windowLight,
 //                  halftone, clouds, cloudDensity, stroke }
 //   note           why this view — for us, not shown on screen
@@ -26,13 +28,6 @@ export const SONG_SCENES = [
     note: 'a perfect landing — we begin in the air, looking down',
   },
   {
-    title: '鹿港小鎮', artist: '羅大佑',
-    view: { name: 'Taiwan', anchor: 'world', frame: 'world', target: [17, 1.18, -2], azimuth: 27.6, elevation: 25.1, distance: 90, zoom: 2.162, follow: false }, time: 11, sky: ['#5aa6e6', '#efe6d4', '#79c25a'],  // saved view
-    float: 0.9,
-    effects: { timezone: 0.4 },
-    note: 'the small town left behind',
-  },
-  {
     title: '回家', artist: 'Shunza',
     view: { name: 'Bus Stop', anchor: 'world', frame: 'world', target: [3.5, 2.89, 13.5], azimuth: -5, elevation: 16, distance: 40, zoom: 3.258, follow: false }, time: 10, sky: ['#1d56d6', '#b69ae4', '#ff4b3a'],  // saved view
     float: 1,
@@ -41,9 +36,9 @@ export const SONG_SCENES = [
   },
   {
     title: '想厝的人', artist: '詹雅雯',
-    view: { name: 'Taiwan', anchor: 'twWindow', frame: 'local', target: [-0.24, 1.48, -6.12], azimuth: -86.1, elevation: -1.2, distance: 6, zoom: 3.695, follow: true, label: 'Window Close-Up', durationScale: 1.6, effects: {windowLight: 1} }, time: 11, sky: ['#5aa6e6', '#efe6d4', '#79c25a'],  // saved view
-    float: 0.6,
-    effects: { windowLight: 1 },
+    view: { name: 'Taiwan', anchor: 'world', frame: 'world', target: [17, 1.18, -2], azimuth: 27.6, elevation: 25.1, distance: 90, zoom: 2.162, follow: false }, time: 11, sky: ['#5aa6e6', '#efe6d4', '#79c25a'],  // saved view (was 鹿港小鎮's)
+    float: 0.9,
+    effects: { timezone: 0.4 },
     note: 'someone missing home — looking in',
   },
   {
@@ -58,6 +53,7 @@ export const SONG_SCENES = [
     view: { name: 'Open sky', anchor: 'twWindow', frame: 'local', target: [48.11, -8.09, 22.89], azimuth: 113.4, elevation: 5.8, distance: 6, zoom: 3.807, follow: true, label: 'Window Close-Up', durationScale: 1.6, effects: {windowLight: 1} }, time: 5, sky: ['#7fb3ea', '#f7d7c4', '#f3d98a'],  // saved view
     float: 2.8,
     birds: { count: 12, speed: 2 },
+    bridge: { lights: true, spin: true },   // the floating bridge lights up and slowly turns
     note: 'wandering — the world starts to loosen',
   },
   {

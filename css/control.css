@@ -292,6 +292,25 @@ kbd {
 }
 .now strong { font-weight: 500; font-size: 15px; }
 .now .row-buttons { grid-column: 1 / -1; }   /* prev / next sit right under the active song */
+.now-sky { display: inline-flex; align-items: center; gap: 8px; }
+.sky-swatch { display: inline-block; width: 34px; height: 22px; border: var(--line); flex: none; }
+#activeTime { font-size: 13px; }
+
+/* camera sliders, inside the Motion card: two columns, boxed off below the stages */
+.motion-cam {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px;
+  padding: 10px 0 4px; border-top: var(--line); border-bottom: var(--line);
+}
+.motion-cam .toggle { margin-top: 2px; }
+.motion-cam .row-buttons { grid-template-columns: 1fr 1fr 1fr; }
+.motion-cam .row-buttons .btn { padding-left: 4px; padding-right: 4px; white-space: nowrap; font-size: 13px; }
+@media (max-width: 700px) { .motion-cam { grid-template-columns: 1fr; } }
+
+/* sky colors: three pickers, top / middle / bottom */
+.sky-colors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sky-colors label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.sky-colors input[type="color"] { width: 40px; height: 26px; padding: 0; border: var(--line); background: none; cursor: pointer; }
+#skyHex { font-family: var(--mono); font-size: 11px; }
 
 /* song list */
 .songlist {
@@ -439,6 +458,7 @@ body.onescreen { font-size: 13px; }
 }
 @media (max-width: 1099px) {
   .onescreen .layout { grid-template-columns: 1fr; }
+  .onescreen .col-right { grid-template-columns: 1fr; }
 }
 .onescreen .top { padding: 12px 20px 8px; align-items: center; }
 .onescreen .eyebrow { margin-bottom: 2px; font-size: 10px; }
@@ -453,12 +473,18 @@ body.onescreen { font-size: 13px; }
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr);
   gap: 12px;
   padding: 10px 20px 14px;
   align-items: stretch;
 }
 .onescreen .col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+/* right side: Motion | Atmosphere on top, Camera across the bottom */
+.onescreen .col-right {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr); align-items: stretch;
+}
+.onescreen .col-right #cameraCard { grid-column: 1 / -1; }
 .onescreen .card { padding: 10px 12px 12px; gap: 9px; min-height: 0; }
 .onescreen h2 { padding-bottom: 7px; font-size: 10px; }
 .onescreen .field { gap: 2px; }
@@ -496,7 +522,9 @@ body.onescreen { font-size: 13px; }
 .onescreen .cam-group:first-child { margin-top: 0; }
 .onescreen .cam-grid { gap: 4px; }
 .onescreen .cam { font-size: 12px; padding: 5px 8px; }
-.onescreen .cam-sliders { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: var(--line); }
+.onescreen .cam-sliders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 16px; padding-top: 8px; border-top: var(--line); }
+.onescreen .cam-sliders .hint { grid-column: 1 / -1; }
+.onescreen .col-right .cam-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
 /* motion + atmosphere */
 .onescreen .stages { grid-auto-columns: 1fr; }
@@ -507,3 +535,46 @@ body.onescreen { font-size: 13px; }
 .onescreen .preset span { font-size: 9px; left: 4px; bottom: 2px; }
 .onescreen .segmented button { padding: 6px 4px; font-size: 12px; }
 .onescreen .now .label { margin-bottom: 2px; }
+
+/* ================================================================
+   Narrow window (performing): one column you scroll down — Song scenes,
+   Motion, Atmosphere, Camera — with the song list in its own scroll box,
+   and the Active song + Prev / Activate / Next stuck to the top.
+   ================================================================ */
+.now-dock { display: none; }
+@media (max-width: 1099px) {
+  body.onescreen { height: auto; overflow: visible; display: block; }
+  .onescreen .now-dock {
+    display: block; position: sticky; top: 0; z-index: 20;
+    padding: 8px 12px; background: var(--paper);
+    border-bottom: var(--line); box-shadow: 0 6px 14px -10px rgba(28, 58, 154, .45);
+  }
+  .onescreen .now-dock .now { margin: 0; }
+  .onescreen .layout { display: flex; flex-direction: column; padding: 10px 12px 18px; gap: 12px; }
+  .onescreen .layout > *, .onescreen .col-right > *, .onescreen .card > * { min-width: 0; max-width: 100%; }
+  .onescreen .presets { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .onescreen .stages button { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .onescreen .saveview .hint { white-space: normal; }
+  .onescreen .col-right { display: flex; flex-direction: column; gap: 12px; }
+  .onescreen .songlist { flex: none; max-height: 46vh; overflow-y: auto; }
+  .onescreen .presets-cam { flex: none; max-height: 50vh; }
+  .onescreen .col-right .cam-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .onescreen .top { flex-wrap: wrap; gap: 8px; padding: 10px 12px 6px; }
+  .onescreen .top-right { flex-wrap: wrap; gap: 8px; }
+  .onescreen .top-right .hint { display: none; }
+  .onescreen h1 { font-size: 18px; }
+  .onescreen .sky { margin: 0 12px; }
+}
+/* very narrow: tighten the grids so nothing overflows */
+@media (max-width: 520px) {
+  .onescreen .now { grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+  .onescreen .now .row-buttons { grid-template-columns: 1fr 1.4fr 1fr; gap: 6px; }
+  .onescreen .now .row-buttons .btn { padding: 8px 4px; font-size: 12px; }
+  .onescreen .presets { grid-template-columns: repeat(3, 1fr); }
+  .onescreen .toggles { grid-template-columns: 1fr; }
+  .onescreen .col-right .cam-grid { grid-template-columns: 1fr; }
+  .onescreen .songlist .cam-tag { display: none; }
+  .onescreen .songlist li { grid-template-columns: 22px 1fr; }
+  .sky-colors { grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+  .sky-colors label span { display: none; }
+}

@@ -143,9 +143,9 @@ export const CAMERA_PRESETS = [
     atmosphere: 'late',
   },
   {
-    id: 'subway', name: 'Subway Island',
+    id: 'subway', name: 'Subway Stairs',
     group: 'small',
-    anchor: 'subway', target: [0, 0.6, 0], azimuth: 20, elevation: 28, distance: 40, zoom: 3.0,
+    anchor: 'subway', target: [0, 1.6, 0], azimuth: 20, elevation: 15, distance: 40, zoom: 2.4,
     atmosphere: 'late', effects: { windowLight: 1 },
   },
   {
@@ -171,6 +171,12 @@ export const CAMERA_PRESETS = [
     group: 'sky', follow: true,
     anchor: 'ladderOrbit', frame: 'local', target: [0, 4.4, 0], azimuth: 175, elevation: 10, distance: 100, zoom: 2.0,   // circles the ladder once per loop
     durationScale: 1.4, effects: { windowLight: 1 },
+  },
+  {
+    id: 'stairsOrbit', name: 'Spiral Stairs (orbit)',
+    group: 'sky', follow: true,
+    anchor: 'stairsOrbit', frame: 'local', target: [0, 1.6, 0], azimuth: 110, elevation: 10, distance: 100, zoom: 3.8,   // circles the stairs once per loop
+    durationScale: 1.4,
   },
   {
     id: 'apple', name: 'Big Apple',
@@ -229,7 +235,7 @@ export const GROUPS = [
   { id: 'ny', name: 'New York', ids: ['newyork', 'henge', 'nywindow', 'bridge', 'apple'] },
   { id: 'tw', name: 'Taiwan', ids: ['taiwan', 'window', 'roadtrip', 'lookout', 'dining'] },
   { id: 'small', name: 'Small islands', ids: ['busstop', 'grove', 'subway', 'lamp', 'suitcase', 'lighthouse', 'windmill'] },
-  { id: 'sky', name: 'Floating objects', ids: ['ladder', 'ladderOrbit', 'luggage', 'portals', 'departures', 'clock', 'plane', 'bathroom', 'twobirds'] },
+  { id: 'sky', name: 'Floating objects', ids: ['ladder', 'ladderOrbit', 'stairsOrbit', 'luggage', 'portals', 'departures', 'clock', 'plane', 'bathroom', 'twobirds'] },
   { id: 'cabin', name: 'Cabin', ids: ['airplane'] },
 ];
 

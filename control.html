@@ -23,15 +23,19 @@
     </div>
   </header>
   <div class="sky" id="skyPreview" aria-hidden="true"></div>
+  <!-- narrow window: the Active song + Prev / Next move up here and stick to the top -->
+  <div class="now-dock" id="nowDock"></div>
 
   <main class="layout">
 
     <!-- ===================== songs ===================== -->
     <section class="card" id="songs">
       <h2>Song scenes</h2>
-      <div class="now">
+      <div class="now" id="nowPanel">
         <div><span class="label">Active</span><strong id="activeSong">—</strong></div>
         <div><span class="label">Camera</span><span id="activeCamera">—</span></div>
+        <div><span class="label">Sky</span><span class="now-sky"><span class="sky-swatch" id="activeSkySwatch"></span><span id="activeSky">—</span></span></div>
+        <div><span class="label">Time</span><span id="activeTime">—</span></div>
         <div class="row-buttons">
           <button class="btn" id="prevScene" type="button">◀ Prev</button>
           <button class="btn primary" id="activateScene" type="button">Activate selected</button>
@@ -57,8 +61,8 @@
       </div>
     </section>
 
-    <!-- ===================== motion + atmosphere ===================== -->
-    <div class="col">
+    <!-- ===================== motion + atmosphere + camera ===================== -->
+    <div class="col col-right">
       <section class="card">
         <h2>Motion</h2>
         <span class="label">Floating / Displacement</span>
@@ -68,6 +72,30 @@
           <button type="button" data-float="2.2">separate</button>
           <button type="button" data-float="3.6">disassemble</button>
           <button type="button" data-float="5">scatter</button>
+        </div>
+        <span class="label">Camera</span>
+        <div class="motion-cam">
+          <div class="field">
+            <div class="row"><label for="zoom">Zoom</label><output data-for="zoom"></output></div>
+            <input type="range" id="zoom" data-key="zoom" data-scale="log" min="0.3" max="24" step="0.001">
+          </div>
+          <div class="field">
+            <div class="row"><label for="cameraAngle">Camera angle</label><output data-for="cameraAngle"></output></div>
+            <input type="range" id="cameraAngle" data-key="cameraAngle" min="-10" max="85" step="0.5">
+          </div>
+          <div class="field">
+            <div class="row"><label for="cameraOrbit">Orbit</label><output data-for="cameraOrbit"></output></div>
+            <input type="range" id="cameraOrbit" data-key="cameraOrbit" min="-180" max="180" step="1">
+            <label class="toggle"><input type="checkbox" data-key="autoOrbit"><span class="switch" aria-hidden="true"></span><span>Auto orbit (non-stop)</span></label>
+          </div>
+          <div class="field">
+            <div class="row"><label>Pan</label><output id="panOut"></output></div>
+            <div class="row-buttons">
+              <button class="btn" id="panLeft" type="button">◀ Left</button>
+              <button class="btn" id="panCenter" type="button">Center</button>
+              <button class="btn" id="panRight" type="button">Right ▶</button>
+            </div>
+          </div>
         </div>
         <div class="field">
           <div class="row"><label for="birdSpeed">Bird speed</label><output data-for="birdSpeed"></output></div>
@@ -88,6 +116,14 @@
           <div class="row"><label for="twHour">Time</label><output data-for="twHour"></output></div>
           <input type="range" id="twHour" data-key="twHour" min="0" max="23" step="1">
         </div>
+        <div class="field">
+          <div class="row"><label>Sky colors</label><output id="skyHex"></output></div>
+          <div class="sky-colors">
+            <label><input type="color" data-key="bgTop"><span>Top</span></label>
+            <label><input type="color" data-key="bgMid"><span>Middle</span></label>
+            <label><input type="color" data-key="bgBottom"><span>Bottom</span></label>
+          </div>
+        </div>
         <h3 class="sub">Weather</h3>
         <div class="toggles">
           <label class="toggle"><input type="checkbox" data-key="rainOn"><span class="switch" aria-hidden="true"></span><span>Rain on Taiwan</span></label>
@@ -106,29 +142,21 @@
         <div class="field">
           <div class="row"><label for="skyDim">Sky dimmer</label><output data-for="skyDim"></output></div>
           <input type="range" id="skyDim" data-key="skyDim" min="0" max="0.9" step="0.01">
-        </div>      </section>
+        </div>
+        <div class="field">
+          <div class="row"><label for="dream">Dream glass</label><output data-for="dream"></output></div>
+          <input type="range" id="dream" data-key="dream" min="0" max="1" step="0.01">
+        </div>
+      </section>
+
+      <!-- ===================== camera ===================== -->
+      <section class="card" id="cameraCard">
+        <h2>Camera</h2>
+        <div class="presets-cam" id="cameraPresets"></div>
+        <p class="hint"><span class="follow-mark">↻</span> follows something that moves; a view saved from it keeps following. Zoom, angle, orbit and pan are in Motion.</p>
+      </section>
     </div>
 
-    <!-- ===================== camera ===================== -->
-    <section class="card" id="cameraCard">
-      <h2>Camera</h2>
-      <div class="presets-cam" id="cameraPresets"></div>
-      <div class="cam-sliders">
-        <div class="field">
-          <div class="row"><label for="zoom">Zoom</label><output data-for="zoom"></output></div>
-          <input type="range" id="zoom" data-key="zoom" data-scale="log" min="0.3" max="24" step="0.001">
-        </div>
-        <div class="field">
-          <div class="row"><label for="cameraAngle">Camera angle</label><output data-for="cameraAngle"></output></div>
-          <input type="range" id="cameraAngle" data-key="cameraAngle" min="-10" max="85" step="0.5">
-        </div>
-        <div class="field">
-          <div class="row"><label for="cameraOrbit">Orbit</label><output data-for="cameraOrbit"></output></div>
-          <input type="range" id="cameraOrbit" data-key="cameraOrbit" min="-180" max="180" step="1">
-        </div>
-        <p class="hint"><span class="follow-mark">↻</span> follows something that moves; a view saved from it keeps following.</p>
-      </div>
-    </section>
 
   </main>
 
