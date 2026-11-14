@@ -222,4 +222,5 @@ lib/three.module.js Three.js r170
   eye-level perspective. That keeps the 2.5D look but means no vanishing
   point.
 #   l i m i n a l - l a n d i n g - i s l a n d s  
+ #   w e l c o m e - h o m e  
  
