@@ -1,4 +1,4 @@
-# A Temporary Island
+# If this is home, welcome home.
 
 *whnvr, for* Liminal Landing
 
@@ -28,69 +28,83 @@ camera, and procedural geometry only. There is no backend.
 
 ## Run it
 
-ES modules need a local server, so opening the files directly won't work.
 **Start the server from inside this folder** (the one with `viewer.html`):
 
 ```bash
 cd path/to/temporary-island      # tip: type "cd ", then drag the folder into Terminal
-python3 -m http.server 8080
+python3 serve.py
 ```
 
-Then open, in the same browser:
+Then open http://localhost:8080/control.html and press *Open viewer* (top
+right). Drag the viewer window onto the projector and press **f** in it for
+fullscreen. The controller fits on one screen (a 14" laptop window or
+larger); the song list and the camera buttons scroll inside their own boxes.
 
-- **Controller**: http://localhost:8080/control.html
-- **Viewer**: press *Open viewer* in the controller, or go to http://localhost:8080/viewer.html
+`serve.py` works like `python3 -m http.server`, and it also lets *Save
+view* write into `views.json` in this folder. It uses only the Python built
+into macOS, needs no internet, and is reachable only from this computer. It
+also turns off browser caching, so a normal reload always shows the newest
+files. To use another port, run `python3 serve.py 8081`.
 
-The two pages sync live through `BroadcastChannel`, and settings persist in
-`localStorage`. If the page shows a 404, the server was started from the
-wrong folder.
+If you start it with `python3 -m http.server` instead, everything plays
+normally, but *Save view* can't write. The controller shows this in red.
+
+The controller and viewer sync through `BroadcastChannel`, so they need to
+be in the same browser on the same computer. If the page shows a 404, the
+server was started from the wrong folder.
 
 ## Performing
 
 **Song scenes.** Click a song, then *Activate selected*. You can also
 double-click a song, or use **←/→** to move to the previous or next scene
 (**↑/↓** then **Enter** picks one). The camera, atmosphere, floating level and
-birds all move together over the *transition duration*.
+birds all move together over the *transition duration*. The camera moves
+at one steady speed the whole way, with no speeding up or slowing down.
+
+**Saving a song's scene.** *Save view* stores, for the selected song: the
+camera, plus everything in Motion and Atmosphere (Floating / Displacement,
+bird speed, Island breathing, Ripple, Time, sky, rain, snow, Contrast). Activating
+the song brings it all back, each easing in at its usual pace. Not saved
+per song: the house layout (*Rearrange houses*) and the stroke style, which
+stay as set for the whole night. A song that hasn't saved something keeps
+the value from `js/songs.js` (each song sets its own floating level), or
+else the value from the song before.
 
 **Saving a view (and time) for a song.** Frame a shot in the viewer: drag to
 orbit, right-drag (or Shift-drag) to pan, scroll to zoom, double-click to
-reset. Set the *Time* slider and the sky (an atmosphere button or the three
-colors). In the controller under *Save camera view, time + sky*, pick the
-song and press *Save view*. That song now opens on exactly this view, at
-this hour, under this sky (a red ● in the song list marks it). Saved views
-live in this browser; *Copy saved views as code* gives you lines to paste
-into `js/songs.js` so they're permanent and travel with the project.
+reset. Set the *Time* slider and pick the sky (an atmosphere button). Select the song in the list and press *Save view → (song)*. That song now opens on exactly this view, at
+this hour, under this sky, and a red ● marks it in the song list.
 
-**Camera presets** (keys **1–9, 0, -**):
+Saved views go straight into **`views.json`** in the project folder, so zipping
+the folder carries them to the other computer. A saved view overrides the
+song's default camera in `js/songs.js`. *Clear* removes it and puts the song
+back to that default. `views.json.bak` keeps the version from before the
+last save, in case you need to undo one.
 
-| # | Preset | |
-|---|---|---|
-| 01 | World Overview | the whole archipelago |
-| 02 | New York Island | brick, fire escapes, the crossroads |
-| 03 | Taiwan Island | walk-ups, cages, plants, rooftops |
-| 04 | Window Close-Up | slow approach into a caged Taiwanese window: a lit room, a curtain, a memory on the back wall |
-| 05 | Crossroads | the intersection from above; lower the angle and orbit for street level |
-| 06 | Suitcase Island | |
-| 07 | Lighthouse | the searching beam |
-| 08 | Between Islands | low and wide, emphasizing the empty space between |
-| 09 | Different Timezones | sunset over New York and sunrise over Taiwan in one continuous sky |
-| 10 | Airplane Window | high above, looking down through a cabin window as the world drifts below |
-| 11 | New York Window | a fourth-floor window behind the fire escape |
-| 12 | Manhattanhenge | street level down the avenue, the sun setting between the buildings |
-| 13 | Bridge Window | the suspension bridge leading into its window |
-| 14 | Ladder to a Window | a tall ladder standing in the air, a lit window at the top |
-| 15 | Baggage Belt | the luggage hill, bags riding the belt past it |
-| 16 | Airliner | following the flat white airliner from above |
-| 17 | Subway Island | the subway stairs and their globe lamps |
-| 18 | Bus Stop Island | the shelter, bench and stop sign |
-| 19 | Grove Island | a few trees |
-| 20 | Flying Houses | low angle from below, the houses drifting overhead |
+**Passing the project back and forth:** take turns. Each zip replaces the
+whole folder, views included, and nothing merges two people's changes. So
+always continue from the newest zip you've received, and don't edit your
+old copy at the same time.
 
-Presets 12–20 have no number keys; click them in the controller. To open the
-viewer straight on a preset, add `?preset=<id>` (e.g. `viewer.html?preset=subway`).
+**Camera buttons** are grouped by place: 全景, 紐約, 台灣, 中小型島, 飄浮物件,
+機艙. Press one to fly there, then frame the shot with the mouse or the
+*Zoom*, *Camera angle* and *Orbit* sliders. To open the viewer straight on
+one, add `?preset=<id>` (e.g. `viewer.html?preset=subway`).
 
-*Zoom*, *Camera angle* and *Orbit* adjust the current preset live. The
-*Autonomous camera tour* walks through the presets every 30 s on its own.
+**How a saved view is stored.** Every song remembers its own camera: where
+it is, where it looks and how zoomed. It doesn't depend on any button. Each
+view is named automatically after what it looks at (e.g. "Bus Stop",
+"Taiwan · close-up"); the name shows in the song list.
+- **Fixed views.** Most views are a fixed spot in the world.
+- **Following views.** Buttons marked **↻** follow something that moves:
+  New York Window, Bridge Window, Manhattanhenge and Big Apple (New York);
+  Window Close-Up and Road Trip (Taiwan); Departures Board, Airliner and Two
+  Birds (sky); and the Airplane Window. A view saved while on one of these
+  keeps following it, so the window or bus stays in frame as things move.
+  To make a fixed view near a moving thing, start from a button without ↻
+  and frame it with the mouse.
+- **Special scenes.** The airplane cabin windows and the interiors (Lookout,
+  Dining Room, Bathroom) are remembered by the view itself.
 
 **Floating / Displacement**
 - 0–1: gentle floating, as before.
@@ -100,30 +114,58 @@ viewer straight on a preset, add `?preset=<id>` (e.g. `viewer.html?preset=subway
 
 Bringing the slider back down returns every object exactly to its place.
 Each object has a stored home position and a fixed, seeded drift, so
-nothing accumulates error or gets lost. The *Scattering* buttons jump to
-four levels.
+nothing accumulates error or gets lost. Five buttons set it: still (no motion),
+float, separate, disassemble and scatter. It moves at a steady pace with a
+soft start and stop, about 2 s per step, so going from float to scatter
+takes about 8 s and you see the world come apart. There are always 12 houses per island;
+*Rearrange houses* shuffles where they stand. On Taiwan every arrangement
+keeps the houses (with their poles and lamps) off the ring road the bus
+drives on and off the mountain slopes.
+
+**Birds.** 20 birds; only their speed is adjustable.
+
+**Ripple** (switch). The picture wavers as if seen through water. It fades in
+and out over about 3 s.
+
+**Island breathing** (switch). The islands swell and settle every 15 s, and
+a wave rolls across each one: houses and towers lift, stretch and lean a
+little with it, and the mountains swell. Switching it on or off eases in or
+out over a few seconds. The islands always turn one full turn per 2-minute
+loop.
 
 **Time.** The *Time* slider is Taiwan's clock (00:00–23:00); New York is
-always 12 hours apart. Each island gets its own light from its hour: day,
-golden hour, or night, with a sun or a moon above it. *Night darkness* sets
-how dark night gets (at 100% the lights are almost off, and only windows,
-screens, signs, skyscraper windows, the subway globes and the lighthouse
-stay lit). *Split sky* goes from the usual blended sky to a hard split down
-the middle of the screen, one island's sky on each side, with a line
-between.
+always 12 hours apart. When the island with daylight changes, the sun and
+moon trade places slowly (about 4 s), one passing above the other.
+Each island gets its own light from its hour: day,
+golden hour or night, with a sun or a moon above it. Windows follow the
+hour too. By day most are dark and a few are lit; at golden hour they come
+on; at night most are lit. The windows the close-up cameras look into
+always stay lit. Night darkness is fixed at 85%. The sky comes from the
+atmosphere buttons; *midnight* is a deep black sky.
 
-**Song 1 / Airplane Window** looks out through a row of five cabin windows,
+**Weather.** Two switches: rain on Taiwan (60%) and snow on New York (100%).
+They build up and die away over about 4 s.
+
+**Halftone** breathes on its own, between 30% and 70% three times per loop,
+and a patch of dots wanders across the upper half of the picture.
+
+**Song 1 / Airplane Window** looks out through a row of three cabin windows,
 shades up, with clouds drifting past.
 
-**Style.** Choose between Stroke, Reduced stroke and No stroke. In No stroke,
-shading contrast rises slightly so forms stay readable.
+**Look** (in Atmosphere). Choose between Stroke, Reduced stroke and No
+stroke. In No stroke, shading contrast rises slightly so forms stay
+readable. **Contrast** raises or lowers contrast and color saturation
+together (for the projection through the scrim); it is saved per song.
 
 ## Recording at 1920 × 1080
 
 1. Open `viewer.html?w=1920&h=1080` and press **f** for fullscreen.
-2. Set island rotation, bird speed and cloud drift to whole numbers (the
-   sliders snap toward them).
-3. Press *Restart loop at 0:00*, then record **2:00** for a seamless loop.
+2. Keep bird speed on a whole number (the slider snaps toward them).
+3. Start recording at any moment and record **2:00**: any two minutes loop
+   seamlessly, so there is no need to start at 0:00.
+   Clouds drift at a fixed 1.5×, so they line up every 4:00 instead of 2:00.
+   Over 2:00 that's barely noticeable, but if a perfect loop matters,
+   record **4:00**.
 
 Camera moves and song scenes run on their own clock, separate from the
 2-minute loop. They never reset the animation, so you can cut between views
@@ -147,8 +189,10 @@ mid-recording.
 ```
 viewer.html, control.html, css/
 js/config.js        defaults, palette, atmospheres, local times, world layout
-js/presets.js       camera presets (+ tour order)
-js/songs.js         the 18 song scenes
+js/presets.js       camera presets
+js/songs.js         the 34 song scenes (default camera, time, sky per song)
+views.json          camera views saved from the controller (overrides songs.js)
+serve.py            local server: serves the folder + writes views.json
 js/viewer.js        renderer, post-processing (sky, timezones, halftone, grain,
                     airplane window), state easing, sync
 js/control.js       controller UI
@@ -158,6 +202,8 @@ js/architecture.js  buildings, crossroads, lighthouse, suitcase, objects
 js/materials.js     toon shader, stroke modes, window-room shader, light beam
 js/memories.js      procedural window memories + hook for real images
 js/clouds.js        atmospheric clouds
+js/weather.js       rain over Taiwan, snow over New York
+js/freecam.js       mouse camera in the viewer (drag / right-drag / scroll)
 js/birds.js         pigeons + sparrows
 lib/three.module.js Three.js r170
 ```
@@ -175,5 +221,5 @@ lib/three.module.js Three.js r170
 - **Street-level crossroads** is a low orthographic angle, not a true
   eye-level perspective. That keeps the 2.5D look but means no vanishing
   point.
-- **The autonomous tour** runs on a fixed 30 s cycle with no random
-  ordering.
+#   l i m i n a l - l a n d i n g - i s l a n d s  
+ 
