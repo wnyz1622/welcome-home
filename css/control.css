@@ -608,3 +608,12 @@ body.onescreen { font-size: 13px; }
   .onescreen .field .row { flex-wrap: wrap; gap: 0 6px; }
   .onescreen .field output { white-space: nowrap; }
 }
+
+/* Share live */
+.share { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: var(--line); }
+.share-input {
+  flex: 1 1 200px; min-width: 0; font: 11px var(--mono); color: var(--ink); background: var(--paper);
+  border: var(--line); border-radius: 0; padding: 6px 8px;
+}
+#onlineStatus { flex: 1 1 auto; }
+#onlineStatus[data-ok="true"] { color: var(--green, #2f8a3a); }

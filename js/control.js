@@ -6,6 +6,7 @@ import {
 } from './config.js';
 import { GROUPS, presetById, isView } from './presets.js';
 import { SONG_SCENES } from './songs.js';
+import { relaySender, newRoomCode } from './relay.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -21,6 +22,7 @@ state.autoTime = false;   // auto time always starts off; switch it on during th
 state.cloudsOn = false;   // clouds always start off too; switch them on if a song wants them
 let selectedSong = state.activeSong >= 0 ? state.activeSong : 0;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel(CHANNEL_NAME) : null;
+let relay = null;   // Share live: the online relay to viewers elsewhere (set up below)
 
 // ------------------------------------------------------------- formatting
 
@@ -51,6 +53,7 @@ function push(ease = false) {
   requestAnimationFrame(() => {
     pending = false;
     channel?.postMessage({ type: 'state', state, ease: pendingEase });
+    relay?.send('state', { state, ease: pendingEase }, true);
     pendingEase = false;
   });
 }
@@ -481,6 +484,7 @@ function sendClock() {
   tickClock();
   const msg = { t: clock.t, angle: clock.angle, bird: clock.bird, cloud: clock.cloud };
   channel?.postMessage({ type: 'clock', src: CLOCK_ID, ...msg });
+  relay?.send('clock', { src: CLOCK_ID, ...msg }, true);
   try { localStorage.setItem(CLOCK_KEY, JSON.stringify({ ...msg, wall: Date.now() })); } catch { /* private mode */ }
 }
 setInterval(tickClock, 100);
@@ -559,6 +563,57 @@ const AUTO_TIME_RATE = 1 / 600;  // hours per second: one hour every 10 minutes
     $('#activeTime').textContent = `${hhmm(state.twHour)} TW · ${hhmm(state.twHour + 12)} NY ▸`;
     push();
   }, 250);
+}
+
+// ------------------------------------------------------------- share live (relay)
+// Viewers in another browser — OBS's Browser Source, the projector computer,
+// a friend's laptop — can't hear this page directly, so the controller also
+// sends every change (and the show clock) through a free public relay.
+// A viewer opened with ?room=CODE follows it. The room code stays the same
+// until New room code is pressed.
+{
+  const ROOM_KEY = 'whnvr-liminal-landing/room';
+  const ONLINE_KEY = 'whnvr-liminal-landing/online';
+  // the shared link always points at the published site, so it opens anywhere
+  const PUBLIC_BASE = 'https://wnyz1622.github.io/welcome-home/';
+  const isLocal = /^(localhost|127\.|0\.0\.0\.0)/.test(location.hostname) || location.protocol === 'file:';
+  let roomCode = localStorage.getItem(ROOM_KEY) || newRoomCode();
+  try { localStorage.setItem(ROOM_KEY, roomCode); } catch { /* private mode */ }
+  const box = $('#onlineOn'), status = $('#onlineStatus'), link = $('#shareLink');
+  const viewerUrl = () => new URL(`viewer.html?room=${roomCode}&w=1920&h=1080`, isLocal ? PUBLIC_BASE : location.href).href;
+  const setStatus = (n) => {
+    status.dataset.ok = String(n > 0);
+    status.textContent = !relay ? 'off' : n > 0 ? `live · room ${roomCode}` : 'connecting…';
+  };
+  const start = () => {
+    relay?.close();
+    relay = relaySender(roomCode, setStatus);
+    setStatus(0);
+    // once connected, send the current scene + clock (the relay keeps them for late joiners)
+    const first = setInterval(() => {
+      if (!relay) { clearInterval(first); return; }
+      if (relay.connected) { clearInterval(first); push(); sendClock(); }
+    }, 300);
+  };
+  const stop = () => { relay?.close(); relay = null; setStatus(0); };
+  link.value = viewerUrl();
+  // off unless switched on before — and always off while the panel is hidden
+  box.checked = !$('#online').hidden && localStorage.getItem(ONLINE_KEY) === 'on';
+  if (box.checked) start(); else setStatus(0);
+  box.addEventListener('change', () => {
+    try { localStorage.setItem(ONLINE_KEY, box.checked ? 'on' : 'off'); } catch { /* private mode */ }
+    if (box.checked) start(); else stop();
+  });
+  $('#copyLink').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(link.value); status.textContent = 'link copied'; setTimeout(() => setStatus(relay?.connected || 0), 2000); }
+    catch { link.select(); }
+  });
+  $('#newRoom').addEventListener('click', () => {
+    roomCode = newRoomCode();
+    try { localStorage.setItem(ROOM_KEY, roomCode); } catch { /* private mode */ }
+    link.value = viewerUrl();
+    if (relay) start();
+  });
 }
 
 // Narrow window (performing): one column, and the Active song with Prev /

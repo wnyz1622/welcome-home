@@ -59,6 +59,20 @@
           <span class="hint" id="viewMsg" role="status"></span>
         </div>
       </div>
+      <!-- Share live: hidden for now (the show uses Chrome + Window Capture). Remove "hidden" to bring it back. -->
+      <div class="share" id="online" hidden>
+        <span class="label">Share live</span>
+        <label class="toggle"><input type="checkbox" id="onlineOn"><span class="switch" aria-hidden="true"></span><span>Send to viewers in other browsers (OBS, other computers)</span></label>
+        <div class="saveview-row">
+          <input class="share-input" id="shareLink" readonly aria-label="Viewer link to share">
+          <button class="btn primary" id="copyLink" type="button">Copy link</button>
+        </div>
+        <div class="saveview-row">
+          <span class="hint" id="onlineStatus" role="status">off</span>
+          <button class="btn" id="newRoom" type="button">New room code</button>
+        </div>
+        <p class="hint">Paste the link into an OBS Browser Source (or open it anywhere) and it follows this controller live. It goes through a free public relay, so share it only with people you trust.</p>
+      </div>
     </section>
 
     <!-- ===================== motion + atmosphere + camera ===================== -->

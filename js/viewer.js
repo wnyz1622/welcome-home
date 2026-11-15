@@ -15,6 +15,7 @@ import { createFreecam } from './freecam.js'; // TEMP free camera
 import { presetById, isView } from './presets.js';
 import { SONG_SCENES } from './songs.js';
 import { LAMP_HALOS } from './architecture.js';
+import { relayListener } from './relay.js';
 
 THREE.ColorManagement.enabled = false; // treat every hex color as-is, like ink on paper
 const TAU = Math.PI * 2;
@@ -600,6 +601,9 @@ let birdPhase = 0;
 let cloudPhase = 0;
 let air = 0;
 let blackStart = -1;   // when the fade from black began (song 1)
+// the show opens on black and stays black until the controller activates a
+// song (any eased change); then it fades in on that song. ?noblack skips it.
+let holdBlack = !params.has('noblack');
 let lastCue = target.cameraCue;
 let easeBoostUntil = 0;
 let strokeMode = null;
@@ -627,10 +631,15 @@ function applyState(s, ease) {
   target = sanitize(s);
   const nowSec = performance.now() / 1000;
   world.setLayout(target.layoutSeed, nowSec);
-  if (target.cameraCue !== lastCue || target.cameraPreset !== prev.cameraPreset) {
+  // first song of the show: lift the black. Under the black everything lands
+  // at once (camera jumps, sky + light settle fast), then it fades in.
+  const reveal = holdBlack && ease;
+  if (reveal) { holdBlack = false; blackStart = nowSec; }
+  if (target.cameraCue !== lastCue || target.cameraPreset !== prev.cameraPreset || reveal) {
     lastCue = target.cameraCue;
     const p = specOf(target);
-    if (p.overlay === 'airplane') {
+    if (reveal && p.overlay !== 'airplane') rig.jump(p);
+    else if (p.overlay === 'airplane') {
       // song 1: start from black and fade in on the windows
       rig.jump(p);
       blackStart = nowSec;
@@ -648,7 +657,7 @@ function applyState(s, ease) {
     // the camera move and never shorter than ~6 s — so nothing pops.
     const p = specOf(target);
     const camDur = rig.transitioning ? rig.endTime - nowSec : target.transition * (p.durationScale || 1);
-    startAtmo(nowSec, Math.max(ATMO_MIN, camDur * 1.25));
+    startAtmo(nowSec, reveal ? 0.35 : Math.max(ATMO_MIN, camDur * 1.25));
   }
 }
 
@@ -717,6 +726,17 @@ if (channel) {
     else if (m.type === 'hello' && m.from === 'control') sendStatus();
   };
   channel.postMessage({ type: 'hello', from: 'viewer' });
+}
+// ?room=CODE (Share live): also follow a controller in another browser or on
+// another computer, through the online relay. Same-browser control still works.
+{
+  const room = params.get('room');
+  if (room) {
+    relayListener(room, (kind, data) => {
+      if (kind === 'state' && data.state) applyState(data.state, !!data.ease);
+      else if (kind === 'clock') syncClock(data);
+    });
+  }
 }
 // The camera exactly as it is now (preset or view + sliders + mouse), made
 // into a saved view of its own: a fixed spot in the world, or, if the camera
@@ -980,7 +1000,7 @@ function drawFrame(now) {
   const airTarget = rig.preset.overlay === 'airplane' ? 1 : 0;
   const airOut = Math.max(0.8, target.transition * (rig.preset.durationScale || 1));
   air = airTarget ? Math.min(1, air + dt / 0.8) : Math.max(0, air - dt / airOut);
-  let black = 0;
+  let black = holdBlack ? 1 : 0;
   if (blackStart >= 0) {
     const u = Math.min(1, Math.max(0, (nowSec - blackStart - 0.4) / 3));
     black = 1 - u * u * (3 - 2 * u);
